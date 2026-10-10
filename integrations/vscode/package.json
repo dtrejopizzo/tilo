@@ -1,0 +1,462 @@
+{
+  "name": "tilo-vscode",
+  "displayName": "Tilo",
+  "description": "Tu día de Tilo dentro de VSCode: tareas, hábitos, suplementos, comidas, entrenamiento, energía, mail, pausas activas y foco",
+  "version": "0.2.0",
+  "publisher": "dtrejopizzo",
+  "private": true,
+  "license": "UNLICENSED",
+  "repository": "https://github.com/dtrejopizzo/tiloApp",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "tilo",
+          "title": "Tilo",
+          "icon": "media/tilo.svg"
+        }
+      ]
+    },
+    "views": {
+      "tilo": [
+        {
+          "id": "tilo.today",
+          "name": "Hoy"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "tilo.today",
+        "contents": "Conectá Tilo para ver tu día acá.\n[Conectar](command:tilo.setToken)\nGenerá un token en Tilo → Settings → VSCode y MCP.",
+        "when": "!tilo.connected"
+      }
+    ],
+    "commands": [
+      {
+        "command": "tilo.openStats",
+        "title": "Abrir stats",
+        "category": "Tilo",
+        "icon": {
+          "light": "media/tilo-light.svg",
+          "dark": "media/tilo-dark.svg"
+        }
+      },
+      {
+        "command": "tilo.openSettings",
+        "title": "Abrir settings",
+        "category": "Tilo",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "tilo.quickAdd",
+        "title": "Registrar algo…",
+        "category": "Tilo",
+        "icon": "$(add)"
+      },
+      {
+        "command": "tilo.refresh",
+        "title": "Actualizar",
+        "category": "Tilo",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "tilo.prevDay",
+        "title": "Día anterior",
+        "category": "Tilo",
+        "icon": "$(chevron-left)"
+      },
+      {
+        "command": "tilo.nextDay",
+        "title": "Día siguiente",
+        "category": "Tilo",
+        "icon": "$(chevron-right)"
+      },
+      {
+        "command": "tilo.today",
+        "title": "Volver a hoy",
+        "category": "Tilo",
+        "icon": "$(calendar)"
+      },
+      {
+        "command": "tilo.addTask",
+        "title": "Nueva tarea",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.logWater",
+        "title": "Sumar un vaso de agua",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.logMeal",
+        "title": "Registrar comida",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.logWeight",
+        "title": "Registrar peso",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.checkin",
+        "title": "Check-in de energía y ánimo",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.startWorkout",
+        "title": "Empezar entrenamiento",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.logSet",
+        "title": "Registrar serie",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.finishWorkout",
+        "title": "Terminar entrenamiento",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.startFocus",
+        "title": "Empezar sesión de foco",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.stopFocus",
+        "title": "Terminar sesión de foco",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.takeBreak",
+        "title": "Tomar una pausa activa ahora",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.todoToTask",
+        "title": "Crear tarea desde este TODO",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.taskFromInsight",
+        "title": "Crear tarea desde este mail",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.quickMenu",
+        "title": "Acciones rápidas",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.openWeb",
+        "title": "Abrir Tilo en el navegador",
+        "category": "Tilo",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "tilo.setToken",
+        "title": "Conectar (URL y token)",
+        "category": "Tilo"
+      },
+      {
+        "command": "tilo.clearToken",
+        "title": "Desconectar",
+        "category": "Tilo"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "tilo.prevDay",
+          "when": "view == tilo.today && tilo.connected",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tilo.nextDay",
+          "when": "view == tilo.today && tilo.connected",
+          "group": "navigation@2"
+        },
+        {
+          "command": "tilo.quickAdd",
+          "when": "view == tilo.today && tilo.connected",
+          "group": "navigation@3"
+        },
+        {
+          "command": "tilo.openStats",
+          "when": "view == tilo.today && tilo.connected",
+          "group": "navigation@4"
+        },
+        {
+          "command": "tilo.refresh",
+          "when": "view == tilo.today && tilo.connected",
+          "group": "navigation@5"
+        },
+        {
+          "command": "tilo.today",
+          "when": "view == tilo.today && tilo.notToday",
+          "group": "navigation@0"
+        },
+        {
+          "command": "tilo.openSettings",
+          "when": "view == tilo.today",
+          "group": "1_settings"
+        },
+        {
+          "command": "tilo.openWeb",
+          "when": "view == tilo.today",
+          "group": "1_settings"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "tilo.taskFromInsight",
+          "when": "view == tilo.today && viewItem == insight",
+          "group": "inline"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "tilo.openStats",
+          "when": "tilo.connected && activeWebviewPanelId != 'tilo.stats'",
+          "group": "navigation@100"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "tilo.todoToTask",
+          "when": "tilo.connected && editorTextFocus",
+          "group": "z_tilo"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "tilo.quickAdd",
+        "key": "ctrl+alt+t",
+        "mac": "cmd+alt+t"
+      },
+      {
+        "command": "tilo.logWater",
+        "key": "ctrl+alt+w",
+        "mac": "cmd+alt+w"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "tilo.chat",
+        "name": "tilo",
+        "fullName": "Tilo",
+        "description": "Preguntale por tu día, tus stats o registrá cosas",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "hoy",
+            "description": "Resumen de tu día"
+          },
+          {
+            "name": "plan",
+            "description": "Plan del día: 3 tareas, entrenamiento, comidas"
+          },
+          {
+            "name": "review",
+            "description": "Revisión de la semana con patrones y una acción concreta"
+          },
+          {
+            "name": "log",
+            "description": "Registrá lo que comiste o hiciste (ej: /log 2 empanadas y 500 de agua)"
+          }
+        ]
+      }
+    ],
+    "configuration": {
+      "title": "Tilo",
+      "properties": {
+        "tilo.apiUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "URL de tu Tilo, por ejemplo `https://tilo.vercel.app`."
+        },
+        "tilo.glassSizeMl": {
+          "type": "number",
+          "default": 250,
+          "minimum": 1,
+          "description": "Mililitros que suma el botón de agua."
+        },
+        "tilo.refreshIntervalMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "Cada cuántos minutos se actualiza el día."
+        },
+        "tilo.statusBar.items": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "water",
+              "habits",
+              "tasks",
+              "energy",
+              "break",
+              "focus"
+            ]
+          },
+          "default": [
+            "water",
+            "habits",
+            "tasks",
+            "break"
+          ],
+          "description": "Qué muestra la status bar."
+        },
+        "tilo.breaks.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Recordarme pausas activas."
+        },
+        "tilo.breaks.everyMinutes": {
+          "type": "number",
+          "default": 50,
+          "enum": [
+            25,
+            30,
+            45,
+            50,
+            60,
+            90
+          ],
+          "description": "Minutos de edición activa antes de recordar una pausa."
+        },
+        "tilo.breaks.lengthMinutes": {
+          "type": "number",
+          "default": 2,
+          "enum": [
+            1,
+            2,
+            5,
+            10
+          ],
+          "description": "Duración de cada pausa."
+        },
+        "tilo.breaks.workingHours": {
+          "type": "string",
+          "default": "09:00-19:00",
+          "pattern": "^\\d{2}:\\d{2}-\\d{2}:\\d{2}$",
+          "description": "Horario en que se recuerdan pausas."
+        },
+        "tilo.breaks.days": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "default": [
+            0,
+            1,
+            2,
+            3,
+            4
+          ],
+          "description": "Días con pausas (0 = lunes … 6 = domingo)."
+        },
+        "tilo.breaks.idleResetMinutes": {
+          "type": "number",
+          "default": 5,
+          "description": "Si te alejás este tiempo, cuenta como pausa y el reloj se reinicia."
+        },
+        "tilo.breaks.kind": {
+          "type": "string",
+          "enum": [
+            "rotate",
+            "walk",
+            "stretch",
+            "eyes",
+            "breathe"
+          ],
+          "default": "rotate",
+          "description": "Qué sugiere cada pausa."
+        },
+        "tilo.breaks.habitName": {
+          "type": "string",
+          "default": "Pausas activas",
+          "description": "Si tenés un hábito con este nombre, se marca al completar las pausas del día."
+        },
+        "tilo.breaks.dailyGoal": {
+          "type": "number",
+          "default": 6,
+          "description": "Pausas por día para marcar el hábito."
+        },
+        "tilo.reminders.water": {
+          "type": "boolean",
+          "default": true,
+          "description": "Recordar agua cuando venís atrasado."
+        },
+        "tilo.reminders.waterEveryMinutes": {
+          "type": "number",
+          "default": 60,
+          "description": "Frecuencia máxima del recordatorio de agua."
+        },
+        "tilo.reminders.meals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "13:30",
+            "21:00"
+          ],
+          "description": "Horas para preguntarte qué comiste."
+        },
+        "tilo.reminders.dailyReview": {
+          "type": "string",
+          "default": "21:30",
+          "description": "Hora del resumen del día (vacío para desactivar)."
+        },
+        "tilo.focus.minutes": {
+          "type": "number",
+          "default": 25,
+          "description": "Duración de una sesión de foco."
+        },
+        "tilo.focus.trackCoding": {
+          "type": "boolean",
+          "default": true,
+          "description": "Registrar automáticamente el tiempo programando como foco."
+        },
+        "tilo.ai.useEditorModel": {
+          "type": "boolean",
+          "default": true,
+          "description": "Estimar comidas con el modelo de IA de tu editor (Copilot) en vez de la IA de Tilo."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --target=node18 --format=cjs --external:vscode --outfile=dist/extension.js",
+    "watch": "npm run build -- --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "npm run build && vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/vscode": "~1.95.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.25.0",
+    "typescript": "~5.8.2",
+    "@tilo/core": "*"
+  },
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#1d2a24",
+    "theme": "dark"
+  }
+}

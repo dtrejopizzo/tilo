@@ -1,0 +1,36 @@
+{
+  "name": "@tilo/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared Tilo types, API client, calculations and stats rendering (web, VSCode, MCP)",
+  "type": "module",
+  "exports": {
+    "./apiTypes": "./src/apiTypes.ts",
+    "./client": "./src/client.ts",
+    "./stats": "./src/stats.ts",
+    "./statsHtml": "./src/statsHtml.ts",
+    "./energy": "./src/energy.ts",
+    "./exercises": "./src/exercises.ts",
+    "./quickAdd": "./src/quickAdd.ts",
+    "./sources": "./src/sources.ts",
+    "./supplements": "./src/supplements.ts",
+    "./today": "./src/today.ts",
+    "./training": "./src/training.ts",
+    "./mcp": "./src/mcp.ts",
+    "./ingestFormats": "./src/ingestFormats.ts",
+    "./achievements": "./src/achievements.ts",
+    "./streaks": "./src/streaks.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.2",
+    "vitest": "^3.2.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.3.6"
+  }
+}

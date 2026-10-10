@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Tilo: original Australian Shepherd mark (blue merle, happy face) -->
+  <!-- fluffy ruff behind the head -->
+  <path d="M38 112c-4 22 4 44 18 58l-2 10 10-4 2 10 8-8 6 10 6-9 14 9 14-9 6 9 6-10 8 8 2-10 10 4-2-10c14-14 22-36 18-58z" fill="#4b5b6e"/>
+  <!-- white chest -->
+  <path d="M72 150c4 18 14 32 28 40 14-8 24-22 28-40-8 6-18 9-28 9s-20-3-28-9z" fill="#f3f1ec"/>
+  <path d="M100 160c8 8 18 14 26 14-6 8-16 14-26 16z" fill="#d5dae0"/>
+  <!-- head -->
+  <path d="M100 26c-36 0-60 24-62 58-2 32 14 58 34 70 8 5 18 8 28 8s20-3 28-8c20-12 36-38 34-70-2-34-26-58-62-58z" fill="#62758a"/>
+  <!-- merle patches -->
+  <path d="M58 60c6-14 18-24 32-28-4 14-16 26-32 28z" fill="#46576b"/>
+  <path d="M132 40c10 4 18 12 22 22-10-2-18-10-22-22z" fill="#46576b"/>
+  <circle cx="148" cy="96" r="5" fill="#46576b"/>
+  <!-- ears: attached at the top corners, folding over and hanging down the sides -->
+  <path d="M74 34C56 26 30 32 22 52c-6 16-2 36 6 52l3-9 4 11 4-10 5 9 1-12 7 6c0-18 2-34 8-46 4-8 10-14 14-19z" fill="#2c3846"/>
+  <path d="M126 34c18-8 44-2 52 18 6 16 2 36-6 52l-3-9-4 11-4-10-5 9-1-12-7 6c0-18-2-34-8-46-4-8-10-14-14-19z" fill="#2c3846"/>
+  <path d="M40 54c-6 6-8 16-6 28M160 54c6 6 8 16 6 28" stroke="#3e4c5d" stroke-width="4" stroke-linecap="round" fill="none"/>
+  <!-- tan eyebrows and cheeks -->
+  <ellipse cx="76" cy="70" rx="7" ry="5" fill="#d49a72"/>
+  <ellipse cx="124" cy="70" rx="7" ry="5" fill="#d49a72"/>
+  <path d="M50 102c2 16 10 32 24 42l4-24-14-20z" fill="#d49a72"/>
+  <path d="M150 102c-2 16-10 32-24 42l-4-24 14-20z" fill="#d49a72"/>
+  <!-- white blaze: narrow between the eyes, widening into the muzzle -->
+  <path d="M93 27c-1 22-2 46-4 62-14 4-24 16-24 30 0 20 16 36 35 36s35-16 35-36c0-14-10-26-24-30-2-16-3-40-4-62-2-1-5-1-7-1s-5 0-7 1z" fill="#f3f1ec"/>
+  <!-- eyes -->
+  <circle cx="76" cy="86" r="9.5" fill="#2b1a10"/>
+  <circle cx="124" cy="86" r="9.5" fill="#2b1a10"/>
+  <circle cx="76" cy="86" r="6" fill="#6b3a1f"/>
+  <circle cx="124" cy="86" r="6" fill="#6b3a1f"/>
+  <circle cx="79" cy="83" r="2.6" fill="#fff"/>
+  <circle cx="127" cy="83" r="2.6" fill="#fff"/>
+  <!-- open smiling mouth and tongue -->
+  <path d="M76 120c6 10 14 15 24 15s18-5 24-15c-3 18-12 30-24 30s-21-12-24-30z" fill="#2b2124"/>
+  <path d="M88 133c0 12 5 21 12 21s12-9 12-21c-4 2-8 3-12 3s-8-1-12-3z" fill="#e8899a"/>
+  <path d="M100 137v12" stroke="#c96b7c" stroke-width="2" stroke-linecap="round"/>
+  <!-- nose -->
+  <path d="M85 108c0-6 7-9 15-9s15 3 15 9c0 7-8 12-15 12s-15-5-15-12z" fill="#1c1f24"/>
+  <ellipse cx="93" cy="105" rx="4.4" ry="2.4" fill="#5a6270"/>
+  <path d="M100 120v4" stroke="#2b2124" stroke-width="3" stroke-linecap="round"/>
+</svg>
