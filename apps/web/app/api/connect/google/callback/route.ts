@@ -1,4 +1,5 @@
 import { after, NextResponse, type NextRequest } from "next/server"
+import { env } from "@/lib/env"
 import { readState } from "@/lib/server/connections"
 import { connectGoogle, gmailSnapshot, GOOGLE_SCOPES, syncGoogleHealth } from "@/lib/server/google"
 import { supabaseAdmin } from "@/lib/supabase/server"
@@ -20,9 +21,9 @@ export async function GET(req: NextRequest) {
       if (GOOGLE_SCOPES.gmail.every((s) => scopes.includes(s))) await gmailSnapshot(state.u, sub, c?.account_email ?? "", today, today).catch((e) => console.error("[gmail]", e))
       if (GOOGLE_SCOPES.health.every((s) => scopes.includes(s))) await syncGoogleHealth(state.u, sub, 14).catch((e) => console.error("[google health]", e))
     })
-    return NextResponse.redirect(new URL(`${back}${back.includes("?") ? "&" : "?"}connected=google`, req.url))
+    return NextResponse.redirect(new URL(`${env.appUrl()}${back}${back.includes("?") ? "&" : "?"}connected=google`))
   } catch (error) {
     console.error("[google] connect failed:", error)
-    return NextResponse.redirect(new URL(`${back}?connect_error=${encodeURIComponent(String(error instanceof Error ? error.message : error))}`, req.url))
+    return NextResponse.redirect(new URL(`${env.appUrl()}${back}?connect_error=${encodeURIComponent(String(error instanceof Error ? error.message : error))}`))
   }
 }

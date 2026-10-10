@@ -5,6 +5,15 @@ import { NextResponse, type NextRequest } from "next/server"
 // visitors to /login. API routes authenticate themselves (session, JWT or tilo_ token).
 export async function proxy(request: NextRequest) {
   if (process.env.NEXT_PUBLIC_DEMO === "true") return NextResponse.next() // demo: no accounts
+  // One canonical host: the session cookie and the OAuth callbacks (Strava, Google) live on
+  // NEXT_PUBLIC_APP_URL, so a visit through another alias (preview URL, *-projects.vercel.app) is sent there.
+  const canonical = canonicalHost()
+  if (canonical && request.nextUrl.host !== canonical && !request.nextUrl.hostname.endsWith("localhost")) {
+    const url = request.nextUrl.clone()
+    url.host = canonical
+    url.protocol = "https"
+    return NextResponse.redirect(url, 308)
+  }
   let response = NextResponse.next({ request })
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
     cookies: {
@@ -25,6 +34,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url)
   }
   return response
+}
+
+function canonicalHost(): string | null {
+  try {
+    const u = new URL(process.env.NEXT_PUBLIC_APP_URL ?? "")
+    return u.hostname.endsWith("localhost") ? null : u.host
+  } catch {
+    return null
+  }
 }
 
 export const config = {

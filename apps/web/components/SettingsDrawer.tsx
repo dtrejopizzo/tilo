@@ -64,6 +64,7 @@ function GoalsSection() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [goals, setGoals] = useState<Goals | null>(null)
   const [weight, setWeight] = useState<number | null>(null)
+  const [savedWeight, setSavedWeight] = useState<number | null>(null)
   const [freezes, setFreezes] = useState(1)
 
   useEffect(() => {
@@ -72,7 +73,11 @@ function GoalsSection() {
       setGoals(r.goals)
       setFreezes(Number(r.settings.streak_freezes ?? 1))
     })
-    tilo.getDay(localDate()).then((d) => setWeight(d.weight ? Number(d.weight.kg) : null)).catch(() => {})
+    tilo.getDay(localDate()).then((d) => {
+      const kg = d.weight ? Number(d.weight.kg) : null
+      setWeight(kg)
+      setSavedWeight(kg)
+    }).catch(() => {})
   }, [])
   if (!profile || !goals) return <Section id="goals" title="Objetivos"><p className="hint">Cargando…</p></Section>
 
@@ -99,6 +104,10 @@ function GoalsSection() {
       goals: goalsPatch,
       settings: { streak_freezes: freezes },
     })
+    if (weight != null && weight !== savedWeight) {
+      await tilo.addWeight(weight, undefined, localDate())
+      setSavedWeight(weight)
+    }
     invalidateDay(localDate())
     toast("Objetivos guardados")
   }
@@ -122,6 +131,7 @@ function GoalsSection() {
         </label>
       </div>
       <div className="row-inputs">
+        <Num label="Peso hoy" suffix="kg" value={weight} step={0.1} onChange={setWeight} />
         <Num label="Peso objetivo" suffix="kg" value={goals.weight_target_kg} step={0.1} onChange={(v) => g("weight_target_kg", v)} />
         <label className="field" htmlFor="s-wdate"><span>Para el</span><input id="s-wdate" className="input" type="date" value={goals.weight_target_date ?? ""} onChange={(e) => g("weight_target_date", e.target.value || null)} /></label>
         <Num label="Calorías" suffix="kcal/día" value={goals.kcal} step={10} onChange={(v) => g("kcal", v ?? 2000)} />
@@ -368,7 +378,7 @@ function ConnectionsSection() {
                   {c.scopes.some((s) => s.includes("googlehealth")) && <span className="pill leaf">Health</span>}
                 </span>
               )}
-              <span className={`pill ${c.status === "active" ? "" : "red"}`}>{c.status === "active" ? (c.last_sync_at ? `sincronizado ${new Date(c.last_sync_at).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}` : "conectado") : `error: ${c.last_error ?? c.status}`}</span>
+              <span className={`pill ${c.status === "active" && !c.last_error ? "" : "red"}`}>{c.status === "active" && !c.last_error ? (c.last_sync_at ? `sincronizado ${new Date(c.last_sync_at).toLocaleString("es-AR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}` : "conectado") : `error: ${c.last_error ?? c.status}`}</span>
             </div>
             <button className="btn danger sm" onClick={() => save(() => tilo.request("DELETE", `/connections?provider=${c.provider}&id=${c.external_id}`), "Desconectado").then(load)}>Desconectar</button>
           </div>
