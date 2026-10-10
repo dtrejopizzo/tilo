@@ -1,148 +1,390 @@
 "use client"
 
+import type { Goals, Profile } from "@tilo/core/apiTypes"
+import { ageFrom, bmr } from "@tilo/core/energy"
+import { SUPPLEMENT_PRESETS } from "@tilo/core/supplements"
 import { CircleCheck, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { useCallback, useEffect, useState, type ReactNode } from "react"
-import { fmt, localDate, tilo } from "@/lib/client/api"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
+import { crud, fmt, localDate, tilo } from "@/lib/client/api"
+import { invalidateDay } from "@/lib/client/useDay"
 
-type Device = "garmin" | "watch" | "fitbit" | "strava" | "none"
+// Onboarding: welcome → 1 about you → 2 connect → 3 goals → 4 habits & supplements → done.
+// Every step is detected from the account, so someone who already did part of it lands on what's missing.
 
-const DEVICES: { id: Device; name: string; hint: string }[] = [
-  { id: "garmin", name: "Garmin", hint: "vía Strava, automático" },
-  { id: "watch", name: "Otro reloj (Apple, Coros, Polar…)", hint: "sus entrenamientos llegan por Strava" },
-  { id: "fitbit", name: "Fitbit / Pixel Watch", hint: "pasos, energía y FC con Google Health" },
-  { id: "strava", name: "Strava", hint: "actividades al instante" },
-  { id: "none", name: "Nada por ahora", hint: "cargás todo a mano" },
-]
+type StepId = 1 | 2 | 3 | 4
+type Screen = "loading" | "welcome" | StepId | "done"
 
 interface Conns {
-  connections: { provider: string; scopes: string[]; display_name: string | null }[]
+  connections: { provider: string; scopes: string[]; display_name: string | null; last_error: string | null }[]
   deviceSources: { source: string; device: string | null; last_date: string; last_steps: number | null }[]
 }
+interface Onboarding { connect?: boolean; goals?: boolean; habits?: boolean }
+interface SettingsRes { profile: Profile; goals: Goals; settings: { onboarding?: Onboarding } }
+interface Catalog { habits: { id: string; name: string }[]; supplements: { id: string; name: string }[] }
 
-function Step({ n, done, title, children, action }: { n: number; done?: boolean; title: string; children: ReactNode; action?: ReactNode }) {
+const STEPS: { id: StepId; title: string; short: string }[] = [
+  { id: 1, title: "Sobre vos", short: "Vos" },
+  { id: 2, title: "Conectá tus datos", short: "Datos" },
+  { id: 3, title: "Objetivos", short: "Objetivos" },
+  { id: 4, title: "Hábitos y suplementos", short: "Hábitos" },
+]
+
+const HABIT_PRESETS: { name: string; auto?: string; weekly?: number }[] = [
+  { name: "Entrenar", auto: "strength", weekly: 3 },
+  { name: "Salir a correr", auto: "run", weekly: 3 },
+  { name: "Caminar 30 min", auto: "walk" },
+  { name: "Estirar" },
+  { name: "Meditar 10 min" },
+  { name: "Leer 20 min" },
+  { name: "Dormir 7 h o más" },
+  { name: "Sin pantallas antes de dormir" },
+  { name: "Tomar sol 15 min" },
+  { name: "Anotar 3 cosas buenas del día" },
+]
+
+const CONFETTI_COLORS = ["#2f9e5f", "#8a5cd6", "#2f7fe0", "#d48a1c", "#e8899a", "#1fa6b8", "#f2c94c"]
+
+function Confetti() {
+  const pieces = useMemo(
+    () =>
+      Array.from({ length: 70 }, (_, i) => ({
+        left: Math.random() * 100,
+        delay: Math.random() * 2.5,
+        dur: 3 + Math.random() * 2.5,
+        color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+        w: 6 + Math.random() * 6,
+        rot: Math.random() * 360,
+        round: i % 3 === 0,
+      })),
+    [],
+  )
+  return (
+    <div className="confetti" aria-hidden="true">
+      {pieces.map((p, i) => (
+        <i
+          key={i}
+          style={{
+            left: `${p.left}%`, animationDelay: `${p.delay}s`, animationDuration: `${p.dur}s`, background: p.color,
+            width: p.w, height: p.round ? p.w : p.w * 1.6, borderRadius: p.round ? "50%" : 2, transform: `rotate(${p.rot}deg)`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
+
+function Tilo({ size = 140 }: { size?: number }) {
+  return <img src="/icon.svg" alt="" className="mascot" width={size} height={size} />
+}
+
+function Card({ title, done, children, action, hint }: { title: string; done?: boolean; children: ReactNode; action?: ReactNode; hint?: string }) {
   return (
     <div className={`pstep${done ? " ok" : ""}`}>
-      <span className="n">{done ? "✓" : n}</span>
+      <span className="n">{done ? "✓" : "·"}</span>
       <div>
         <h4>{title}</h4>
         {children}
+        {hint && <p style={{ marginTop: 4, color: "var(--danger)" }}>{hint}</p>}
       </div>
       {action}
     </div>
   )
 }
 
+function Num({ id, label, value, onChange, step = 1, suffix, min, max }: { id: string; label: string; value: number | null | undefined; onChange: (v: number | null) => void; step?: number; suffix?: string; min?: number; max?: number }) {
+  return (
+    <label className="field" htmlFor={id}>
+      <span>{label}{suffix ? ` (${suffix})` : ""}</span>
+      <input id={id} className="input num" type="number" inputMode="decimal" step={step} min={min} max={max} value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))} />
+    </label>
+  )
+}
+
 export function ConnectWizard() {
   const router = useRouter()
-  const [step, setStep] = useState<1 | 2>(1)
-  const [me, setMe] = useState({ sex: "", birth_date: "", height_cm: "", weight: "" })
-  const [selected, setSelected] = useState<Device[]>([])
+  const [screen, setScreen] = useState<Screen>("loading")
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [goals, setGoals] = useState<Goals | null>(null)
+  const [ob, setOb] = useState<Onboarding>({})
   const [conns, setConns] = useState<Conns | null>(null)
-  const origin = typeof window !== "undefined" ? window.location.origin : ""
+  const [cat, setCat] = useState<Catalog>({ habits: [], supplements: [] })
+  const [weight, setWeight] = useState<number | null>(null)
+  const [savedWeight, setSavedWeight] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const today = localDate()
 
   const poll = useCallback(() => tilo.request<Conns>("GET", "/connections").then(setConns).catch(() => {}), [])
+  const loadCatalog = useCallback(() => tilo.request<Catalog>("GET", "/catalog").then(setCat).catch(() => {}), [])
+
   useEffect(() => {
-    void poll()
-    tilo.request<{ profile: { sex: string | null; birth_date: string | null; height_cm: number | null } }>("GET", "/settings").then((r) =>
-      setMe((m) => ({ ...m, sex: r.profile.sex ?? "", birth_date: r.profile.birth_date ?? "", height_cm: r.profile.height_cm ? String(r.profile.height_cm) : "" })),
-    )
-    setSelected(["strava"])
-  }, [poll])
+    setMounted(true)
+    Promise.all([
+      tilo.request<SettingsRes>("GET", "/settings"),
+      tilo.request<Conns>("GET", "/connections").catch(() => null),
+      tilo.request<Catalog>("GET", "/catalog").catch(() => ({ habits: [], supplements: [] })),
+      tilo.getDay(localDate()).catch(() => null),
+    ]).then(([s, c, catalog, day]) => {
+      setProfile(s.profile)
+      setGoals(s.goals)
+      setOb(s.settings.onboarding ?? {})
+      setConns(c)
+      setCat(catalog)
+      const kg = day?.weight ? Number(day.weight.kg) : null
+      setWeight(kg)
+      setSavedWeight(kg)
+      setScreen("welcome")
+    }).catch((e) => setError(e instanceof Error ? e.message : String(e)))
+  }, [])
+
+  // While connecting, the OAuth tab comes back here: keep the connection list fresh
   useEffect(() => {
-    if (step !== 2) return
+    if (screen !== 2) return
     const t = setInterval(poll, 5000)
     return () => clearInterval(t)
-  }, [step, poll])
+  }, [screen, poll])
 
-  const has = (provider: string, scope?: string) => conns?.connections.some((c) => c.provider === provider && (!scope || c.scopes.some((s) => s.includes(scope))))
-  const source = (s: string) => conns?.deviceSources.find((d) => d.source === s)
-  const toggle = (d: Device) => setSelected(d === "none" ? ["none"] : selected.includes(d) ? selected.filter((x) => x !== d) : [...selected.filter((x) => x !== "none"), d])
+  // After an OAuth round trip (?connected=strava), reopen the connect step directly
+  useEffect(() => {
+    if (screen !== "welcome") return
+    const q = new URLSearchParams(window.location.search)
+    const wanted = Number(q.get("step"))
+    if (q.get("connected") || q.get("connect_error")) {
+      if (q.get("connect_error")) setError(q.get("connect_error"))
+      setScreen(2)
+      window.history.replaceState(null, "", "/connect")
+    } else if (wanted >= 1 && wanted <= 4) {
+      setScreen(wanted as StepId)
+      window.history.replaceState(null, "", "/connect")
+    }
+  }, [screen])
+
+  const has = (provider: string, scope?: string) => !!conns?.connections.some((c) => c.provider === provider && (!scope || c.scopes.some((s) => s.includes(scope))))
+  const connError = (provider: string) => conns?.connections.find((c) => c.provider === provider)?.last_error ?? undefined
+
+  const done: Record<StepId, boolean> = {
+    1: !!(profile?.sex && profile.birth_date && profile.height_cm && savedWeight != null),
+    2: !!ob.connect || (conns?.connections.length ?? 0) > 0,
+    3: !!ob.goals,
+    4: !!ob.habits || cat.habits.length > 0,
+  }
+  const missing = STEPS.filter((s) => !done[s.id])
+  const firstMissing: Screen = missing[0]?.id ?? "done"
+  const nextAfter = (id: StepId): Screen => STEPS.find((s) => s.id > id && !done[s.id])?.id ?? (STEPS.find((s) => s.id > id)?.id ?? "done")
+
+  async function run(fn: () => Promise<unknown>, then: Screen) {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+      if (then === "done") await tilo.request("PATCH", "/settings", { profile: { onboarding_done: true } })
+      invalidateDay(today)
+      setScreen(then)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveOb = async (patch: Onboarding) => {
+    const next = { ...ob, ...patch }
+    await tilo.request("PATCH", "/settings", { settings: { onboarding: next } })
+    setOb(next)
+  }
+
+  // ---------- step 1: about you ----------
+  const saveProfile = () =>
+    run(async () => {
+      if (!profile) return
+      await tilo.request("PATCH", "/settings", {
+        profile: { sex: profile.sex ?? null, birth_date: profile.birth_date || null, height_cm: profile.height_cm ?? null, body_fat_pct: profile.body_fat_pct ?? null },
+      })
+      if (weight != null && weight !== savedWeight) {
+        await tilo.addWeight(weight, undefined, today)
+        setSavedWeight(weight)
+      }
+    }, nextAfter(1))
+
+  // ---------- step 3: goals ----------
+  const kg = weight ?? savedWeight ?? 75
+  const base = profile ? bmr({ sex: profile.sex, ageYears: ageFrom(profile.birth_date, today), heightCm: profile.height_cm, bodyFatPct: profile.body_fat_pct, activityLevel: Number(profile.activity_level) }, kg) : null
+  const maintenance = base ? Math.round(base.kcal * Number(profile?.activity_level ?? 1.375)) : 2200
+  const days = goals?.weight_target_date ? Math.max(1, (Date.parse(goals.weight_target_date) - Date.now()) / 86_400_000) : null
+  const delta = goals?.weight_target_kg != null && days ? ((Number(goals.weight_target_kg) - kg) * 7700) / days : 0
+  const suggested = Math.max(1200, Math.round((maintenance + delta) / 10) * 10)
+  const pace = goals?.weight_target_kg != null && days ? ((Number(goals.weight_target_kg) - kg) / days) * 7 : null
+  const g = (k: keyof Goals, v: unknown) => goals && setGoals({ ...goals, [k]: v })
+  const macros = (pp: number, cc: number, ff: number) =>
+    goals && setGoals({ ...goals, protein_g: Math.round((goals.kcal * pp) / 400), carbs_g: Math.round((goals.kcal * cc) / 400), fat_g: Math.round((goals.kcal * ff) / 900) })
+  const saveGoals = () =>
+    run(async () => {
+      if (!goals) return
+      const { updated_at: _u, user_id: _uid, ...patch } = goals as Goals & Record<string, unknown>
+      void _u; void _uid
+      await tilo.request("PATCH", "/settings", { goals: patch })
+      await saveOb({ goals: true })
+    }, nextAfter(3))
+
+  // ---------- step 4: habits & supplements ----------
+  const [pickedHabits, setPickedHabits] = useState<string[]>([])
+  const [customHabit, setCustomHabit] = useState("")
+  const [pickedSupps, setPickedSupps] = useState<string[]>([])
+  const haveHabit = (name: string) => cat.habits.some((h) => h.name.toLowerCase() === name.toLowerCase())
+  const haveSupp = (name: string) => cat.supplements.some((s) => s.name === name)
+  const toggleIn = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
+  const saveHabits = () =>
+    run(async () => {
+      let pos = cat.habits.length
+      for (const name of [...pickedHabits, ...(customHabit.trim() ? [customHabit.trim()] : [])]) {
+        if (haveHabit(name)) continue
+        const preset = HABIT_PRESETS.find((p) => p.name === name)
+        await crud.create("habits", {
+          name, position: pos++,
+          frequency: preset?.weekly ? "weekly" : "daily", per_week: preset?.weekly ?? 7,
+          auto_rule: preset?.auto ? { activity_types: [preset.auto], min_minutes: 15 } : null,
+        })
+      }
+      let spos = cat.supplements.length
+      for (const key of pickedSupps) {
+        const p = SUPPLEMENT_PRESETS.find((x) => x.key === key)
+        if (!p || haveSupp(p.name)) continue
+        await crud.create("supplements", { name: p.name, dose: p.dose, unit: p.unit, slot: p.slot, with_food: p.withFood, nutrients: p.nutrients, position: spos++ })
+      }
+      await loadCatalog()
+      await saveOb({ habits: true })
+    }, nextAfter(4))
+
+  const finish = () => run(async () => {}, "done")
+
+  const firstName = (profile?.name ?? "").split(" ")[0]
+  const anyData = (conns?.deviceSources.length ?? 0) > 0 || has("strava")
   const back = encodeURIComponent("/connect")
 
-  async function saveMe() {
-    await tilo.request("PATCH", "/settings", {
-      profile: { sex: me.sex || null, birth_date: me.birth_date || null, height_cm: me.height_cm ? Number(me.height_cm) : null },
-    })
-    if (me.weight) await tilo.addWeight(Number(me.weight.replace(",", ".")), undefined, localDate()).catch(() => {})
-    setStep(2)
+  if (screen === "loading") {
+    return (
+      <main className="main">
+        <div className="wizard"><div className="verify wait"><Loader2 aria-hidden="true" className="spin" /><b>Preparando tu cuenta…</b></div>{error && <p className="bad">{error}</p>}</div>
+      </main>
+    )
   }
 
-  async function finish() {
-    await tilo.request("PATCH", "/settings", { profile: { onboarding_done: true } })
-    router.push("/")
+  if (screen === "welcome") {
+    const fresh = missing.length === STEPS.length
+    return (
+      <main className="main">
+        {mounted && <Confetti />}
+        <div className="wizard welcome">
+          <Tilo />
+          <h1>{fresh ? `¡Bienvenido${firstName ? `, ${firstName}` : ""}!` : `¡Qué bueno verte${firstName ? `, ${firstName}` : ""}!`}</h1>
+          {fresh ? (
+            <p>Soy Tilo. Voy a ayudarte a dejar todo listo en unos minutos: tus datos, tus dispositivos, tus objetivos y tus hábitos. Después, cada día cuenta solo.</p>
+          ) : missing.length ? (
+            <p>Ya tenés {STEPS.length - missing.length} de {STEPS.length} pasos listos. Te {missing.length === 1 ? "falta" : "faltan"} <b>{missing.map((m) => m.title.toLowerCase()).join(", ")}</b>.</p>
+          ) : (
+            <p>Tenés todo configurado. Podés repasar cualquier paso o ir directo a tu día.</p>
+          )}
+          <div className="stepper" role="list">
+            {STEPS.map((s) => (
+              <button key={s.id} role="listitem" className={done[s.id] ? "ok" : ""} onClick={() => setScreen(s.id)}>
+                <span className="n">{done[s.id] ? "✓" : s.id}</span>{s.short}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+            <button className="btn leaf" onClick={() => setScreen(firstMissing)}>{fresh ? "Empezar" : missing.length ? "Completar lo que falta" : "Ir a mi día"}</button>
+            {!fresh && missing.length > 0 && <button className="btn ghost" onClick={finish}>Terminar después</button>}
+          </div>
+        </div>
+      </main>
+    )
   }
 
-  const anyData = (conns?.deviceSources.length ?? 0) > 0 || has("strava")
-  let n = 0
+  if (screen === "done") {
+    return (
+      <main className="main">
+        {mounted && <Confetti />}
+        <div className="wizard welcome">
+          <Tilo />
+          <h1>¡Listo{firstName ? `, ${firstName}` : ""}!</h1>
+          <p>Tu cuenta quedó configurada. Lo que conectaste llega solo; lo demás lo cargás desde Today escribiendo cosas como “peso 81.6”, “+500” de agua o “3x8 80kg”.</p>
+          <button className="btn leaf" onClick={() => router.push("/")}>Ir a Today</button>
+        </div>
+      </main>
+    )
+  }
+
+  const step = screen
+  const current = STEPS.find((s) => s.id === step)!
+  const stepper = (
+    <div className="stepper" role="list" aria-label="Pasos">
+      {STEPS.map((s) => (
+        <button key={s.id} role="listitem" className={done[s.id] ? "ok" : ""} aria-current={s.id === step ? "step" : undefined} onClick={() => setScreen(s.id)}>
+          <span className="n">{done[s.id] ? "✓" : s.id}</span>{s.short}
+        </button>
+      ))}
+    </div>
+  )
+  const skip = (id: StepId) => <button className="btn ghost" disabled={busy} onClick={() => setScreen(nextAfter(id))}>Omitir por ahora</button>
 
   return (
     <main className="main">
       <div className="wizard">
-        <div>
-          <h1 style={{ margin: "0 0 4px", fontSize: 24 }}>Conectá tus datos</h1>
-          <p className="hint" style={{ margin: 0, fontSize: 14 }}>Dos minutos. Elegimos la mejor fuente para cada dato y si dos miden lo mismo, usamos la del reloj.</p>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <Tilo size={56} />
+          <div>
+            <h1 style={{ margin: "0 0 2px", fontSize: 22 }}>{current.title}</h1>
+            <p className="hint" style={{ margin: 0, fontSize: 13 }}>Paso {step} de {STEPS.length}</p>
+          </div>
         </div>
+        {stepper}
+        {error && <p className="bad" style={{ margin: 0 }}>{error}</p>}
 
-        {step === 1 && (
+        {step === 1 && profile && (
           <section className="section">
-            <h3>Sobre vos</h3>
-            <p>Con esto calculamos tu metabolismo basal. Sin estos datos el gasto calórico es una estimación.</p>
+            <h3>Con esto calculamos tu metabolismo basal</h3>
+            <p>Sin estos datos el gasto calórico es una estimación. Si conectás Google Health, la altura y el peso de tu balanza se actualizan solos.</p>
             <div className="row-inputs">
               <label className="field" htmlFor="w-sex"><span>Sexo</span>
-                <select id="w-sex" className="select" value={me.sex} onChange={(e) => setMe({ ...me, sex: e.target.value })}>
+                <select id="w-sex" className="select" value={profile.sex ?? ""} onChange={(e) => setProfile({ ...profile, sex: (e.target.value || null) as Profile["sex"] })}>
                   <option value="">—</option><option value="male">Masculino</option><option value="female">Femenino</option>
                 </select>
               </label>
-              <label className="field" htmlFor="w-birth"><span>Fecha de nacimiento</span><input id="w-birth" className="input" type="date" value={me.birth_date} onChange={(e) => setMe({ ...me, birth_date: e.target.value })} /></label>
-              <label className="field" htmlFor="w-h"><span>Altura (cm)</span><input id="w-h" className="input num" inputMode="numeric" value={me.height_cm} onChange={(e) => setMe({ ...me, height_cm: e.target.value })} /></label>
-              <label className="field" htmlFor="w-w"><span>Peso hoy (kg)</span><input id="w-w" className="input num" inputMode="decimal" value={me.weight} onChange={(e) => setMe({ ...me, weight: e.target.value })} /></label>
+              <label className="field" htmlFor="w-birth"><span>Fecha de nacimiento</span><input id="w-birth" className="input" type="date" value={profile.birth_date ?? ""} onChange={(e) => setProfile({ ...profile, birth_date: e.target.value || null })} /></label>
+              <Num id="w-h" label="Altura" suffix="cm" value={profile.height_cm} min={80} max={260} onChange={(v) => setProfile({ ...profile, height_cm: v })} />
+              <Num id="w-w" label="Peso hoy" suffix="kg" value={weight} step={0.1} min={20} max={400} onChange={setWeight} />
+              <Num id="w-bf" label="Grasa corporal (opcional)" suffix="%" value={profile.body_fat_pct} step={0.1} min={2} max={70} onChange={(v) => setProfile({ ...profile, body_fat_pct: v })} />
             </div>
-            <div><button className="btn leaf" onClick={saveMe}>Seguir</button></div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn leaf" disabled={busy || !profile.sex || !profile.birth_date || !profile.height_cm} onClick={saveProfile}>{busy ? "Guardando…" : "Seguir"}</button>
+              {skip(1)}
+            </div>
           </section>
         )}
 
         {step === 2 && (
           <>
-            <div className="devices" role="group" aria-label="¿Qué usás?">
-              {DEVICES.map((d) => (
-                <button key={d.id} className="dev" aria-pressed={selected.includes(d.id)} onClick={() => toggle(d.id)}>
-                  <b>{d.name}</b>
-                  <span>{d.hint}</span>
-                </button>
-              ))}
-            </div>
-
+            <p className="hint" style={{ margin: 0 }}>Cada conexión abre una ventana de permisos y vuelve acá. Podés conectar una, todas o ninguna.</p>
             <div style={{ display: "grid", gap: 10 }}>
-              {selected.includes("garmin") && (
-                <Step n={++n} done={has("strava")} title="Garmin → Strava">
-                  <p>En la app <b>Garmin Connect</b>: Más → Configuración → Aplicaciones conectadas → <b>Strava</b> → Conectar. Desde ahí cada actividad llega sola, con frecuencia cardíaca y calorías del reloj.</p>
-                </Step>
-              )}
-              {selected.includes("watch") && (
-                <Step n={++n} done={has("strava")} title="Tu reloj → Strava">
-                  <p>Activá la sincronización con Strava en la app de tu reloj (Apple Watch: app Strava → Configuración → Apple Health; Coros, Polar, Suunto, Wahoo: desde su app). Tus entrenamientos llegan con frecuencia cardíaca y calorías.</p>
-                </Step>
-              )}
-              {(selected.includes("strava") || selected.includes("garmin") || selected.includes("watch")) && (
-                <Step n={++n} done={has("strava")} title="Conectar Strava" action={!has("strava") ? <a className="btn leaf sm" href={`/api/connect/strava?return=${back}`}>Conectar</a> : undefined}>
-                  <p>Un click y aceptar. Importamos los últimos 30 días y después cada actividad nueva al instante.</p>
-                </Step>
-              )}
-              {selected.includes("fitbit") && (
-                <Step n={++n} done={has("google", "googlehealth")} title="Fitbit / Pixel Watch (Google Health)" action={!has("google", "googlehealth") ? <a className="btn leaf sm" href={`/api/connect/google?features=health&return=${back}`}>Conectar</a> : undefined}>
-                  <p>Ya entraste con Google: solo aceptás los permisos de salud. Traemos pasos, distancia, energía activa y FC en reposo.</p>
-                </Step>
-              )}
-              <Step n={++n} done={has("google", "gmail")} title="Gmail y Calendar (opcional)" action={!has("google", "gmail") ? <a className="btn ghost sm" href={`/api/connect/google?features=gmail,calendar&return=${back}`}>Conectar</a> : undefined}>
-                <p>Tus reuniones en Today y un resumen diario de tu bandeja: personales vs. newsletters, cuáles esperan respuesta. Nunca guardamos el contenido de los mails.</p>
-              </Step>
+              <Card title="Strava (y Garmin, Coros, Polar, Apple Watch vía Strava)" done={has("strava")} hint={connError("strava")}
+                action={!has("strava") ? <a className="btn leaf sm" href={`/api/connect/strava?return=${back}`}>Conectar</a> : undefined}>
+                <p>Entrenamientos con frecuencia cardíaca y calorías del reloj. Importamos los últimos 30 días y después cada actividad al instante. Al autorizar, dejá marcado <b>“Ver datos de tus actividades privadas”</b>.</p>
+              </Card>
+              <Card title="Google Health (Fitbit, Pixel Watch, Health Connect)" done={has("google", "googlehealth")} hint={connError("google")}
+                action={!has("google", "googlehealth") ? <a className="btn leaf sm" href={`/api/connect/google?features=health&return=${back}`}>Conectar</a> : undefined}>
+                <p>Pasos, distancia, energía activa, FC en reposo y <b>sueño</b>. También el <b>peso y la grasa corporal</b> de balanzas digitales y la altura, de cualquier app del celu que escriba en Health Connect.</p>
+              </Card>
+              <Card title="Gmail y Calendar" done={has("google", "gmail")}
+                action={!has("google", "gmail") ? <a className="btn ghost sm" href={`/api/connect/google?features=gmail,calendar&return=${back}`}>Conectar</a> : undefined}>
+                <p>Tus reuniones en Today y un resumen diario de la bandeja: personales vs. newsletters, cuáles esperan respuesta. Nunca guardamos el contenido de los mails.</p>
+              </Card>
             </div>
-
             <div className={`verify${anyData ? "" : " wait"}`}>
               {anyData ? <CircleCheck aria-hidden="true" /> : <Loader2 aria-hidden="true" className="spin" />}
               <div style={{ flex: 1 }}>
-                <b>{anyData ? "Recibimos tus datos" : "Esperando datos…"}</b>
+                <b>{anyData ? "Recibimos tus datos" : conns?.connections.length ? "Esperando datos…" : "Nada conectado todavía"}</b>
                 <div className="hint">
                   {anyData
                     ? [
@@ -152,10 +394,101 @@ export function ConnectWizard() {
                     : "Esta pantalla se actualiza sola cuando llegan."}
                 </div>
               </div>
-              <button className="btn leaf" onClick={finish}>{anyData || selected.includes("none") ? "Listo" : "Terminar después"}</button>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn leaf" disabled={busy} onClick={() => run(() => saveOb({ connect: true }), nextAfter(2))}>{conns?.connections.length ? "Seguir" : "Seguir sin conectar"}</button>
             </div>
           </>
         )}
+
+        {step === 3 && goals && (
+          <>
+            <section className="section">
+              <h3>Peso</h3>
+              <p>Opcional. Con un objetivo y una fecha, Tilo calcula las calorías para llegar a un ritmo sano.</p>
+              <div className="row-inputs">
+                <Num id="g-wt" label="Peso objetivo" suffix="kg" value={goals.weight_target_kg} step={0.1} onChange={(v) => g("weight_target_kg", v)} />
+                <label className="field" htmlFor="g-wdate"><span>Para el</span><input id="g-wdate" className="input" type="date" value={goals.weight_target_date ?? ""} onChange={(e) => g("weight_target_date", e.target.value || null)} /></label>
+              </div>
+              {pace != null && <p className="hint" style={{ margin: 0 }}>{pace < 0 ? "Bajar" : "Subir"} {Math.abs(pace).toFixed(2)} kg por semana{Math.abs(pace) > 1 ? " · más rápido de lo recomendado, probá con más tiempo" : ""}.</p>}
+            </section>
+            <section className="section">
+              <h3>Comidas</h3>
+              <p>Basal {fmt(base?.kcal ?? 0)} kcal · mantenimiento ≈ <b>{fmt(maintenance)}</b> · sugerido <b>{fmt(suggested)} kcal</b> <button className="btn ghost sm" onClick={() => g("kcal", suggested)}>Usar</button></p>
+              <div className="row-inputs">
+                <Num id="g-kcal" label="Calorías" suffix="kcal/día" value={goals.kcal} step={10} onChange={(v) => g("kcal", v ?? suggested)} />
+                <Num id="g-p" label="Proteína" suffix="g" value={goals.protein_g} onChange={(v) => g("protein_g", v ?? 0)} />
+                <Num id="g-c" label="Carbos" suffix="g" value={goals.carbs_g} onChange={(v) => g("carbs_g", v ?? 0)} />
+                <Num id="g-f" label="Grasas" suffix="g" value={goals.fat_g} onChange={(v) => g("fat_g", v ?? 0)} />
+                <Num id="g-fi" label="Fibra" suffix="g" value={goals.fiber_g} onChange={(v) => g("fiber_g", v ?? 30)} />
+              </div>
+              <div className="picks">
+                <span className="hint">Repartir macros:</span>
+                <button className="pick" onClick={() => macros(30, 40, 30)}>Balanceado 30/40/30</button>
+                <button className="pick" onClick={() => macros(35, 35, 30)}>Alto en proteína</button>
+                <button className="pick" onClick={() => macros(35, 25, 40)}>Bajo en carbos</button>
+                <button className="pick" onClick={() => g("protein_g", Math.round(kg * 1.8))}>Proteína 1.8 g/kg</button>
+              </div>
+            </section>
+            <section className="section">
+              <h3>Agua, pasos y sueño</h3>
+              <div className="row-inputs">
+                <Num id="g-w" label="Agua" suffix="ml/día" value={goals.water_ml} step={100} onChange={(v) => g("water_ml", v ?? 2500)} />
+                <Num id="g-s" label="Pasos" suffix="por día" value={goals.steps} step={500} onChange={(v) => g("steps", v ?? 10000)} />
+                <Num id="g-sl" label="Sueño" suffix="horas" value={Math.round((goals.sleep_min / 60) * 10) / 10} step={0.5} onChange={(v) => g("sleep_min", Math.round((v ?? 7.5) * 60))} />
+                <Num id="g-caf" label="Cafeína máx." suffix="mg" value={goals.caffeine_max_mg} step={50} onChange={(v) => g("caffeine_max_mg", v ?? 400)} />
+              </div>
+              <div className="picks">
+                <span className="hint">Agua sugerida:</span>
+                <button className="pick" onClick={() => g("water_ml", Math.round((kg * 35) / 100) * 100)}>{fmt(Math.round((kg * 35) / 100) * 100)} ml (35 ml/kg)</button>
+              </div>
+            </section>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn leaf" disabled={busy} onClick={saveGoals}>{busy ? "Guardando…" : "Guardar y seguir"}</button>
+              {skip(3)}
+            </div>
+          </>
+        )}
+
+        {step === 4 && (
+          <>
+            <section className="section">
+              <h3>Hábitos</h3>
+              <p>Los diarios cuentan para la racha. Los que tienen “auto” se completan solos con tus entrenamientos. Después podés editar todo en Settings.</p>
+              <div className="picks">
+                {HABIT_PRESETS.map((h) => {
+                  const exists = haveHabit(h.name)
+                  return (
+                    <button key={h.name} className="pick" aria-pressed={exists || pickedHabits.includes(h.name)} disabled={exists} onClick={() => toggleIn(pickedHabits, setPickedHabits, h.name)}>
+                      {h.name}{h.auto ? " · auto" : ""}{h.weekly ? ` · ${h.weekly}×/sem` : ""}
+                    </button>
+                  )
+                })}
+              </div>
+              <label className="field" htmlFor="w-habit"><span>Otro hábito</span><input id="w-habit" className="input" placeholder="Ej: Tocar la guitarra" value={customHabit} onChange={(e) => setCustomHabit(e.target.value)} /></label>
+              {cat.habits.length > 0 && <p className="hint" style={{ margin: 0 }}>Ya tenés: {cat.habits.map((h) => h.name).join(", ")}.</p>}
+            </section>
+            <section className="section">
+              <h3>Suplementos</h3>
+              <p>Opcional. Tilo los suma a tus micronutrientes y te avisa cuándo tomarlos.</p>
+              <div className="picks">
+                {SUPPLEMENT_PRESETS.map((p) => {
+                  const exists = haveSupp(p.name)
+                  return (
+                    <button key={p.key} className="pick" aria-pressed={exists || pickedSupps.includes(p.key)} disabled={exists} onClick={() => toggleIn(pickedSupps, setPickedSupps, p.key)}>
+                      {p.name} · {p.dose} {p.unit}
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn leaf" disabled={busy} onClick={saveHabits}>{busy ? "Guardando…" : pickedHabits.length + pickedSupps.length + (customHabit.trim() ? 1 : 0) ? "Agregar y terminar" : "Terminar"}</button>
+              {skip(4)}
+            </div>
+          </>
+        )}
+
       </div>
     </main>
   )

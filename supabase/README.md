@@ -17,7 +17,7 @@ Todo el schema vive en `migrations/`. `setup.sql` es esos mismos archivos concat
    - Desactivá el resto de los providers (Email, etc.): el login es solo con Google.
 4. **APIs de Google** (APIs & Services → Library): habilitá **Gmail API**, **Google Calendar API** y **Google Health API**. En *OAuth consent screen* agregá los scopes:
    - `gmail.readonly`, `calendar.readonly`
-   - `googlehealth.activity_and_fitness.readonly`, `googlehealth.health_metrics_and_measurements.readonly`
+   - `googlehealth.activity_and_fitness.readonly`, `googlehealth.health_metrics_and_measurements.readonly`, `googlehealth.sleep.readonly`
    - Publicá la app ("In production"). Sin verificar, Google muestra un aviso y permite hasta 100 usuarios; en modo *Testing* los tokens vencen a los 7 días.
 5. **Claves.** Supabase → Project Settings → API: copiá *Project URL*, *anon public* y *service_role* a las variables de entorno (ver [`apps/web/.env.example`](../apps/web/.env.example)).
 

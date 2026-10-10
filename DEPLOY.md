@@ -25,7 +25,7 @@ En [console.cloud.google.com](https://console.cloud.google.com), creá un proyec
 
 1. **APIs & Services → Library**: habilitá **Gmail API**, **Google Calendar API** y **Google Health API**.
 2. **OAuth consent screen**: tipo *External*, nombre "Tilo", tu email. En **Scopes** agregá:
-   `gmail.readonly`, `calendar.readonly`, `googlehealth.activity_and_fitness.readonly`, `googlehealth.health_metrics_and_measurements.readonly`.
+   `gmail.readonly`, `calendar.readonly`, `googlehealth.activity_and_fitness.readonly`, `googlehealth.health_metrics_and_measurements.readonly`, `googlehealth.sleep.readonly`.
    Después **Publish app** ("In production"). Google va a mostrar "app no verificada" al conectar: es normal para uso personal (tocás *Avanzado → Ir a Tilo*). En modo *Testing* los permisos vencen cada 7 días, por eso conviene publicarla.
 3. **Credentials → Create credentials → OAuth client ID → Web application**:
    - Authorized JavaScript origins: `https://<tu-dominio>` y `http://localhost:3000`

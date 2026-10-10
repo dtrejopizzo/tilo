@@ -16,6 +16,7 @@ export const GOOGLE_SCOPES: Record<GoogleFeature, string[]> = {
   health: [
     "https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly",
     "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+    "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
   ],
 }
 
@@ -264,6 +265,77 @@ async function rollup(token: string, type: string, from: string, toExclusive: st
   })
 }
 
+// Sample / session types (weight, body fat, height, sleep) have no daily rollup: list the raw points.
+// GET /users/me/dataTypes/{type}/dataPoints?filter=<AIP-160 on the type's time field>
+async function listPoints(token: string, type: string, filter: string, pageSize = 200): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = []
+  let pageToken: string | undefined
+  for (let i = 0; i < 5; i++) {
+    const q = new URLSearchParams({ filter, pageSize: String(pageSize), ...(pageToken ? { pageToken } : {}) })
+    const res = await fetch(`${HEALTH}/${type}/dataPoints?${q}`, { headers: { Authorization: `Bearer ${token}` } })
+    if (!res.ok) throw new Error(`Google Health ${type}: ${res.status} ${(await res.text()).slice(0, 200)}`)
+    const data = (await res.json()) as { dataPoints?: Record<string, unknown>[]; nextPageToken?: string }
+    out.push(...(data.dataPoints ?? []))
+    pageToken = data.nextPageToken || undefined
+    if (!pageToken) break
+  }
+  return out
+}
+
+// Local date of a sample: civilTime if Google provides it, else the physical timestamp's date
+function sampleDate(point: Record<string, unknown>, key: string): string | null {
+  const inner = point[key] as Record<string, unknown> | undefined
+  const st = (inner?.sampleTime ?? inner?.interval) as Record<string, unknown> | undefined
+  const civil = (st?.civilTime ?? st?.civilEndTime ?? st?.civilStartTime) as { date?: { year: number; month: number; day: number } } | undefined
+  if (civil?.date) return `${civil.date.year}-${String(civil.date.month).padStart(2, "0")}-${String(civil.date.day).padStart(2, "0")}`
+  const ts = (st?.physicalTime ?? st?.endTime ?? st?.startTime) as string | undefined
+  return ts ? ts.slice(0, 10) : null
+}
+
+// Weight, body fat, height and sleep from Google Health (smart scales, Fitbit, Pixel Watch, apps that write to Health Connect)
+async function syncGoogleBody(userId: string, token: string, from: string, to: string, set: (date: string | null, key: string, v: number | null) => void) {
+  const weights = new Map<string, { kg: number; body_fat_pct?: number }>()
+  const [weight, fat, height, sleep] = await Promise.all([
+    listPoints(token, "weight", `weight.sample_time.physical_time >= "${from}T00:00:00Z" AND weight.sample_time.physical_time < "${to}T00:00:00Z"`).catch(() => []),
+    listPoints(token, "body-fat", `body_fat.sample_time.physical_time >= "${from}T00:00:00Z" AND body_fat.sample_time.physical_time < "${to}T00:00:00Z"`).catch(() => []),
+    listPoints(token, "height", `height.sample_time.physical_time >= "2000-01-01T00:00:00Z"`, 5).catch(() => []),
+    listPoints(token, "sleep", `sleep.interval.end_time >= "${from}T00:00:00Z" AND sleep.interval.end_time < "${to}T23:59:59Z"`, 25).catch(() => []),
+  ])
+  // Points come newest first: keep the latest sample of each day
+  for (const p of weight) {
+    const date = sampleDate(p, "weight")
+    const grams = firstNumber(p.weight, /grams/i)
+    if (date && grams != null && !weights.has(date)) weights.set(date, { kg: grams / 1000 })
+  }
+  for (const p of fat) {
+    const date = sampleDate(p, "bodyFat")
+    const pct = firstNumber(p.bodyFat, /percent/i)
+    const w = date ? weights.get(date) : undefined
+    if (w && pct != null && w.body_fat_pct == null) w.body_fat_pct = pct
+  }
+  // Sleep sessions: minutes asleep per night, credited to the day the person woke up
+  const sleepByDate = new Map<string, number>()
+  for (const p of sleep) {
+    const s = p.sleep as Record<string, unknown> | undefined
+    const date = sampleDate(p, "sleep")
+    const summary = s?.summary as Record<string, unknown> | undefined
+    let minutes = firstNumber(summary, /minutesAsleep/i)
+    if (minutes == null) {
+      const iv = s?.interval as { startTime?: string; endTime?: string } | undefined
+      if (iv?.startTime && iv.endTime) minutes = Math.round((Date.parse(iv.endTime) - Date.parse(iv.startTime)) / 60_000)
+    }
+    if (date && minutes != null && minutes > 0) sleepByDate.set(date, (sleepByDate.get(date) ?? 0) + minutes)
+  }
+  for (const [date, min] of sleepByDate) set(date, "sleep_min", min)
+  // Height: fill the profile when the person hasn't typed one
+  const mm = height.length ? firstNumber(height[0].height, /millimeters/i) : null
+  if (mm != null && mm > 800) {
+    const { data } = await supabaseAdmin().from("profiles").select("height_cm").eq("id", userId).single()
+    if (data && data.height_cm == null) await supabaseAdmin().from("profiles").update({ height_cm: Math.round(mm / 10) }).eq("id", userId)
+  }
+  return [...weights].map(([date, w]) => ({ date, ...w }))
+}
+
 export async function syncGoogleHealth(userId: string, sub: string, days = 3) {
   try {
     const token = await googleToken(userId, sub)
@@ -287,7 +359,11 @@ export async function syncGoogleHealth(userId: string, sub: string, days = 3) {
     }
     for (const p of active) set(p.date, "active_kcal", firstNumber(p.value, /kcal|kilocalories|sum/i))
     for (const p of resting) set(p.date, "resting_hr", firstNumber(p.value, /beatsPerMinute|avg|min/i))
-    const payload: IngestPayload = { source: "google_health", device: "Fitbit / Pixel Watch", daily: [...byDate.values()] as IngestPayload["daily"] }
+    const weights = await syncGoogleBody(userId, token, from, to, set).catch((e) => {
+      console.error("[google health] body metrics:", e)
+      return []
+    })
+    const payload: IngestPayload = { source: "google_health", device: "Google Health", daily: [...byDate.values()] as IngestPayload["daily"], weights }
     const r = await ingest(userId, payload)
     await markSynced(userId, "google", sub)
     return r

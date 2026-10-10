@@ -86,6 +86,7 @@ function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
           <div className="card" style={{ position: "absolute", right: 0, top: 38, minWidth: 200, padding: 6, zIndex: 30 }}>
             <div className="row"><span className="t">{user.name}</span></div>
             <button className="row" style={{ width: "100%", border: 0, background: "none", cursor: "pointer" }} onClick={() => { setMenu(false); setSettings("connections") }}>Conectá tus datos</button>
+            <button className="row" style={{ width: "100%", border: 0, background: "none", cursor: "pointer" }} onClick={() => { setMenu(false); router.push("/connect") }}>Asistente de configuración</button>
             <button
               className="row"
               style={{ width: "100%", border: 0, background: "none", cursor: "pointer", color: "var(--danger)" }}
