@@ -2,8 +2,8 @@
 
 import type { Goals, Profile } from "@tilo/core/apiTypes"
 import { ageFrom, bmr } from "@tilo/core/energy"
-import { SUPPLEMENT_PRESETS } from "@tilo/core/supplements"
-import { CircleCheck, Loader2 } from "lucide-react"
+import { SLOT_LABELS, SUPPLEMENT_PRESETS, type SupplementSlot, type SupplementUnit } from "@tilo/core/supplements"
+import { CircleCheck, Loader2, Plus, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { crud, fmt, localDate, tilo } from "@/lib/client/api"
@@ -21,7 +21,25 @@ interface Conns {
 }
 interface Onboarding { connect?: boolean; goals?: boolean; habits?: boolean }
 interface SettingsRes { profile: Profile; goals: Goals; settings: { onboarding?: Onboarding } }
-interface Catalog { habits: { id: string; name: string }[]; supplements: { id: string; name: string }[] }
+interface Catalog {
+  habits: { id: string; name: string; frequency: string; per_week: number; reminder_time: string | null }[]
+  supplements: { id: string; name: string }[]
+}
+interface HabitRow { name: string; frequency: "daily" | "weekly"; per_week: number; reminder_time: string; auto: string }
+interface SuppRow { name: string; dose: number; unit: SupplementUnit; slot: SupplementSlot; days: number[]; with_food: boolean; nutrients: Record<string, number> | null }
+const UNITS: SupplementUnit[] = ["mg", "mcg", "iu", "g", "ml", "caps", "scoop"]
+const SUPP_SUGGESTED = ["vitamin_c", "whey", "electrolytes"]
+const WEEKDAYS = ["L", "M", "X", "J", "V", "S", "D"]
+
+function Days({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
+  return (
+    <span className="days" role="group" aria-label="Días de la semana">
+      {WEEKDAYS.map((d, i) => (
+        <button key={i} type="button" aria-pressed={value.includes(i)} onClick={() => onChange(value.includes(i) ? value.filter((x) => x !== i) : [...value, i].sort())}>{d}</button>
+      ))}
+    </span>
+  )
+}
 
 const STEPS: { id: StepId; title: string; short: string }[] = [
   { id: 1, title: "Sobre vos", short: "Vos" },
@@ -32,15 +50,15 @@ const STEPS: { id: StepId; title: string; short: string }[] = [
 
 const HABIT_PRESETS: { name: string; auto?: string; weekly?: number }[] = [
   { name: "Entrenar", auto: "strength", weekly: 3 },
-  { name: "Salir a correr", auto: "run", weekly: 3 },
+  { name: "Correr", auto: "run", weekly: 3 },
+  { name: "Nadar", auto: "swim", weekly: 2 },
   { name: "Caminar 30 min", auto: "walk" },
+  { name: "Leer", },
+  { name: "Meditar" },
   { name: "Estirar" },
-  { name: "Meditar 10 min" },
-  { name: "Leer 20 min" },
+  { name: "Ir a misa", weekly: 1 },
   { name: "Dormir 7 h o más" },
   { name: "Sin pantallas antes de dormir" },
-  { name: "Tomar sol 15 min" },
-  { name: "Anotar 3 cosas buenas del día" },
 ]
 
 const CONFETTI_COLORS = ["#2f9e5f", "#8a5cd6", "#2f7fe0", "#d48a1c", "#e8899a", "#1fa6b8", "#f2c94c"]
@@ -229,29 +247,32 @@ export function ConnectWizard() {
     }, nextAfter(3))
 
   // ---------- step 4: habits & supplements ----------
-  const [pickedHabits, setPickedHabits] = useState<string[]>([])
-  const [customHabit, setCustomHabit] = useState("")
-  const [pickedSupps, setPickedSupps] = useState<string[]>([])
-  const haveHabit = (name: string) => cat.habits.some((h) => h.name.toLowerCase() === name.toLowerCase())
-  const haveSupp = (name: string) => cat.supplements.some((s) => s.name === name)
-  const toggleIn = (list: string[], set: (v: string[]) => void, v: string) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
+  const [habitRows, setHabitRows] = useState<HabitRow[]>([])
+  const [suppRows, setSuppRows] = useState<SuppRow[]>([])
+  const haveHabit = (name: string) => cat.habits.some((h) => h.name.toLowerCase() === name.trim().toLowerCase())
+  const haveSupp = (name: string) => cat.supplements.some((x) => x.name.toLowerCase() === name.trim().toLowerCase())
+  const addHabitRow = (r: Partial<HabitRow> = {}) => setHabitRows((rows) => [...rows, { name: "", frequency: "daily", per_week: 3, reminder_time: "", auto: "", ...r }])
+  const addSuppRow = (r: Partial<SuppRow> = {}) => setSuppRows((rows) => [...rows, { name: "", dose: 1, unit: "caps", slot: "breakfast", days: [0, 1, 2, 3, 4, 5, 6], with_food: false, nutrients: null, ...r }])
+  const patchHabit = (i: number, v: Partial<HabitRow>) => setHabitRows((rows) => rows.map((r, j) => (j === i ? { ...r, ...v } : r)))
+  const patchSupp = (i: number, v: Partial<SuppRow>) => setSuppRows((rows) => rows.map((r, j) => (j === i ? { ...r, ...v } : r)))
+  const pendingCount = habitRows.filter((r) => r.name.trim()).length + suppRows.filter((r) => r.name.trim()).length
   const saveHabits = () =>
     run(async () => {
       let pos = cat.habits.length
-      for (const name of [...pickedHabits, ...(customHabit.trim() ? [customHabit.trim()] : [])]) {
-        if (haveHabit(name)) continue
-        const preset = HABIT_PRESETS.find((p) => p.name === name)
+      for (const r of habitRows) {
+        const name = r.name.trim()
+        if (!name || haveHabit(name)) continue
         await crud.create("habits", {
-          name, position: pos++,
-          frequency: preset?.weekly ? "weekly" : "daily", per_week: preset?.weekly ?? 7,
-          auto_rule: preset?.auto ? { activity_types: [preset.auto], min_minutes: 15 } : null,
+          name, position: pos++, frequency: r.frequency, per_week: r.frequency === "daily" ? 7 : r.per_week,
+          reminder_time: r.reminder_time || null,
+          auto_rule: r.auto ? { activity_types: [r.auto], min_minutes: 15 } : null,
         })
       }
       let spos = cat.supplements.length
-      for (const key of pickedSupps) {
-        const p = SUPPLEMENT_PRESETS.find((x) => x.key === key)
-        if (!p || haveSupp(p.name)) continue
-        await crud.create("supplements", { name: p.name, dose: p.dose, unit: p.unit, slot: p.slot, with_food: p.withFood, nutrients: p.nutrients, position: spos++ })
+      for (const r of suppRows) {
+        const name = r.name.trim()
+        if (!name || haveSupp(name) || !r.days.length) continue
+        await crud.create("supplements", { name, dose: r.dose, unit: r.unit, slot: r.slot, days: r.days, with_food: r.with_food, nutrients: r.nutrients, position: spos++ })
       }
       await loadCatalog()
       await saveOb({ habits: true })
@@ -454,36 +475,77 @@ export function ConnectWizard() {
           <>
             <section className="section">
               <h3>Hábitos</h3>
-              <p>Los diarios cuentan para la racha. Los que tienen “auto” se completan solos con tus entrenamientos. Después podés editar todo en Settings.</p>
+              <p>Cargá todos los que quieras. Los diarios cuentan para la racha; los semanales tienen una meta de veces por semana. La hora sirve para los recordatorios y “auto” los completa solos con tus entrenamientos.</p>
               <div className="picks">
-                {HABIT_PRESETS.map((h) => {
-                  const exists = haveHabit(h.name)
-                  return (
-                    <button key={h.name} className="pick" aria-pressed={exists || pickedHabits.includes(h.name)} disabled={exists} onClick={() => toggleIn(pickedHabits, setPickedHabits, h.name)}>
-                      {h.name}{h.auto ? " · auto" : ""}{h.weekly ? ` · ${h.weekly}×/sem` : ""}
-                    </button>
-                  )
-                })}
+                <span className="hint">Sugeridos:</span>
+                {HABIT_PRESETS.map((h) => (
+                  <button key={h.name} className="pick" disabled={haveHabit(h.name) || habitRows.some((r) => r.name === h.name)} onClick={() => addHabitRow({ name: h.name, frequency: h.weekly ? "weekly" : "daily", per_week: h.weekly ?? 3, auto: h.auto ?? "" })}>+ {h.name}</button>
+                ))}
               </div>
-              <label className="field" htmlFor="w-habit"><span>Otro hábito</span><input id="w-habit" className="input" placeholder="Ej: Tocar la guitarra" value={customHabit} onChange={(e) => setCustomHabit(e.target.value)} /></label>
-              {cat.habits.length > 0 && <p className="hint" style={{ margin: 0 }}>Ya tenés: {cat.habits.map((h) => h.name).join(", ")}.</p>}
+              {cat.habits.length > 0 && (
+                <div className="list-edit">
+                  {cat.habits.map((h) => (
+                    <div key={h.id} className="list-row" style={{ opacity: .75 }}>
+                      <div className="inline"><CircleCheck aria-hidden="true" style={{ width: 16, height: 16, color: "var(--leaf)" }} /><span>{h.name}</span><span className="hint">{h.frequency === "weekly" ? `${h.per_week}× por semana` : "diario"}{h.reminder_time ? ` · ${String(h.reminder_time).slice(0, 5)}` : ""}</span></div>
+                      <span className="hint">ya cargado</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="list-edit">
+                {habitRows.map((r, i) => (
+                  <div key={i} className="list-row">
+                    <div className="inline">
+                      <input className="input" placeholder="Hábito (ej: Nadar)" aria-label="Nombre" value={r.name} onChange={(e) => patchHabit(i, { name: e.target.value })} />
+                      <select className="select" aria-label="Frecuencia" value={r.frequency} onChange={(e) => patchHabit(i, { frequency: e.target.value as HabitRow["frequency"] })}>
+                        <option value="daily">Todos los días</option><option value="weekly">Por semana</option>
+                      </select>
+                      {r.frequency === "weekly" && <input className="input num" type="number" min={1} max={7} aria-label="Veces por semana" value={r.per_week} onChange={(e) => patchHabit(i, { per_week: Math.min(7, Math.max(1, Number(e.target.value) || 1)) })} />}
+                      {r.frequency === "weekly" && <span className="hint">veces/sem</span>}
+                      <input className="input" type="time" aria-label="Hora del recordatorio" value={r.reminder_time} onChange={(e) => patchHabit(i, { reminder_time: e.target.value })} />
+                      <select className="select" aria-label="Completar automáticamente" value={r.auto} onChange={(e) => patchHabit(i, { auto: e.target.value })}>
+                        <option value="">Manual</option><option value="run">Auto: correr</option><option value="ride">Auto: bici</option><option value="swim">Auto: natación</option><option value="walk">Auto: caminar</option><option value="strength">Auto: gimnasio</option><option value="yoga">Auto: yoga</option>
+                      </select>
+                    </div>
+                    <button className="iconbtn" aria-label="Quitar" onClick={() => setHabitRows((rows) => rows.filter((_, j) => j !== i))}><X /></button>
+                  </div>
+                ))}
+              </div>
+              <div><button className="btn ghost sm" onClick={() => addHabitRow()}><Plus /> Agregar hábito</button></div>
             </section>
             <section className="section">
               <h3>Suplementos</h3>
-              <p>Opcional. Tilo los suma a tus micronutrientes y te avisa cuándo tomarlos.</p>
+              <p>Opcional. Con el momento del día y los días de la semana, Tilo te los recuerda y suma sus nutrientes.</p>
               <div className="picks">
-                {SUPPLEMENT_PRESETS.map((p) => {
-                  const exists = haveSupp(p.name)
-                  return (
-                    <button key={p.key} className="pick" aria-pressed={exists || pickedSupps.includes(p.key)} disabled={exists} onClick={() => toggleIn(pickedSupps, setPickedSupps, p.key)}>
-                      {p.name} · {p.dose} {p.unit}
-                    </button>
-                  )
-                })}
+                <span className="hint">Sugeridos:</span>
+                {SUPPLEMENT_PRESETS.filter((p) => SUPP_SUGGESTED.includes(p.key)).map((p) => (
+                  <button key={p.key} className="pick" disabled={haveSupp(p.name) || suppRows.some((r) => r.name === p.name)} onClick={() => addSuppRow({ name: p.name, dose: p.dose, unit: p.unit, slot: p.slot, with_food: p.withFood, nutrients: p.nutrients })}>+ {p.name} · {p.dose} {p.unit}</button>
+                ))}
               </div>
+              {cat.supplements.length > 0 && <p className="hint" style={{ margin: 0 }}>Ya tenés: {cat.supplements.map((x) => x.name).join(", ")}.</p>}
+              <div className="list-edit">
+                {suppRows.map((r, i) => (
+                  <div key={i} className="list-row">
+                    <div className="inline">
+                      <input className="input" placeholder="Suplemento" aria-label="Nombre" value={r.name} onChange={(e) => patchSupp(i, { name: e.target.value })} />
+                      <input className="input num" type="number" min={0} step="any" aria-label="Dosis" value={r.dose} onChange={(e) => patchSupp(i, { dose: Number(e.target.value) || 0 })} />
+                      <select className="select" aria-label="Unidad" value={r.unit} onChange={(e) => patchSupp(i, { unit: e.target.value as SupplementUnit })}>
+                        {UNITS.map((u) => <option key={u} value={u}>{u}</option>)}
+                      </select>
+                      <select className="select" aria-label="Momento del día" value={r.slot} onChange={(e) => patchSupp(i, { slot: e.target.value as SupplementSlot })}>
+                        {(Object.keys(SLOT_LABELS) as SupplementSlot[]).map((k) => <option key={k} value={k}>{SLOT_LABELS[k]}</option>)}
+                      </select>
+                      <Days value={r.days} onChange={(days) => patchSupp(i, { days })} />
+                      <label className="hint" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}><input type="checkbox" checked={r.with_food} onChange={(e) => patchSupp(i, { with_food: e.target.checked })} /> con comida</label>
+                    </div>
+                    <button className="iconbtn" aria-label="Quitar" onClick={() => setSuppRows((rows) => rows.filter((_, j) => j !== i))}><X /></button>
+                  </div>
+                ))}
+              </div>
+              <div><button className="btn ghost sm" onClick={() => addSuppRow()}><Plus /> Agregar suplemento</button></div>
             </section>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn leaf" disabled={busy} onClick={saveHabits}>{busy ? "Guardando…" : pickedHabits.length + pickedSupps.length + (customHabit.trim() ? 1 : 0) ? "Agregar y terminar" : "Terminar"}</button>
+              <button className="btn leaf" disabled={busy} onClick={saveHabits}>{busy ? "Guardando…" : pendingCount ? `Agregar ${pendingCount} y terminar` : "Terminar"}</button>
               {skip(4)}
             </div>
           </>
