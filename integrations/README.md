@@ -44,10 +44,10 @@ claude mcp add tilo --scope user \
 ```sh
 npm install                            # desde la raíz
 cd integrations/vscode && npm run package
-code --install-extension tilo-vscode-0.2.0.vsix
+code --install-extension tilo-vscode-0.3.0.vsix
 ```
 
-Después corré **Tilo: Conectar (URL y token)** con un token de Settings → VSCode y MCP.
+Después tocá **Iniciar sesión con Tilo** en el panel de Tilo: se abre el navegador, entrás con Google y vuelve solo a VSCode. Si usás tu propio servidor, **Tilo: Conectar (URL y token)** sigue disponible.
 
 - **Sidebar "Hoy"**:
   - Agua (click suma un vaso), comidas con macros, balance energético con desglose y pasos.

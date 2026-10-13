@@ -2,11 +2,11 @@
   "name": "tilo-vscode",
   "displayName": "Tilo",
   "description": "Tu día de Tilo dentro de VSCode: tareas, hábitos, suplementos, comidas, entrenamiento, energía, mail, pausas activas y foco",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "dtrejopizzo",
   "private": true,
   "license": "UNLICENSED",
-  "repository": "https://github.com/dtrejopizzo/tiloApp",
+  "repository": "https://github.com/dtrejopizzo/tilo",
   "engines": {
     "vscode": "^1.95.0"
   },
@@ -38,7 +38,7 @@
     "viewsWelcome": [
       {
         "view": "tilo.today",
-        "contents": "Conectá Tilo para ver tu día acá.\n[Conectar](command:tilo.setToken)\nGenerá un token en Tilo → Settings → VSCode y MCP.",
+        "contents": "Conectá Tilo para ver tu día acá.\n[Iniciar sesión con Tilo](command:tilo.login)\n¿Tenés tu propio servidor o un token? [Conectar con URL y token](command:tilo.setToken)",
         "when": "!tilo.connected"
       }
     ],
@@ -165,6 +165,11 @@
         "icon": "$(link-external)"
       },
       {
+        "command": "tilo.login",
+        "title": "Iniciar sesión",
+        "category": "Tilo"
+      },
+      {
         "command": "tilo.setToken",
         "title": "Conectar (URL y token)",
         "category": "Tilo"
@@ -284,8 +289,8 @@
       "properties": {
         "tilo.apiUrl": {
           "type": "string",
-          "default": "",
-          "markdownDescription": "URL de tu Tilo, por ejemplo `https://tilo.vercel.app`."
+          "default": "https://tiloapp.vercel.app",
+          "markdownDescription": "URL de Tilo. Cambiala solo si usás tu propio servidor."
         },
         "tilo.glassSizeMl": {
           "type": "number",

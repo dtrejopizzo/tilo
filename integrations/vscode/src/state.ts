@@ -34,7 +34,7 @@ export class TiloState {
     const c = await this.client()
     if (c) return c
     const pick = await vscode.window.showWarningMessage("Tilo no está conectado todavía.", "Conectar")
-    if (pick) await vscode.commands.executeCommand("tilo.setToken")
+    if (pick) await vscode.commands.executeCommand("tilo.login")
     return this.client()
   }
 

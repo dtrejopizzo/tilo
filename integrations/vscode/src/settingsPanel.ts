@@ -132,7 +132,7 @@ ${conf("glassSizeMl", "Agua: Vaso", "Lo que suma un click en Agua.", `<input typ
 ${conf("ai.useEditorModel", "IA: Modelo del editor", "Estimar comidas con tu Copilot (gratis) en vez de la IA de Tilo.", check("ai.useEditorModel", "Usar el modelo de IA de VSCode"))}
 
 <h2>Cuenta</h2>
-<div class="setting"><div class="ctl"><span>${esc(cfg.get("apiUrl") || "Sin conectar")}</span><button class="sec" data-command="tilo.setToken">Cambiar URL o token</button><button class="sec" data-command="tilo.clearToken">Desconectar</button></div></div>
+<div class="setting"><div class="ctl"><span>${esc(cfg.get("apiUrl") || "Sin conectar")}</span><button class="sec" data-command="tilo.login">Iniciar sesión</button><button class="sec" data-command="tilo.setToken">Cambiar URL o token</button><button class="sec" data-command="tilo.clearToken">Desconectar</button></div></div>
 </div>
 <script nonce="${nonce}">
 const vscode = acquireVsCodeApi();

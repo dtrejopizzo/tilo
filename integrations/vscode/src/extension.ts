@@ -2,6 +2,7 @@ import type { EmailInsight } from "@tilo/core/apiTypes"
 import { localDate } from "@tilo/core/client"
 import { parseQuickAdd, parseSets } from "@tilo/core/quickAdd"
 import * as vscode from "vscode"
+import { randomBytes } from "node:crypto"
 import { ActivityTracker } from "./activity"
 import { Breaks } from "./breaks"
 import { registerChat } from "./chat"
@@ -121,7 +122,36 @@ export function activate(context: vscode.ExtensionContext) {
     await state.act((c) => c.quickAdd(text, state.date), (r) => r.summary)
   }
 
+  // ---------- browser login: Tilo creates a token and hands it back through vscode://… ----------
+  let loginState: string | null = null
+  context.subscriptions.push(
+    vscode.window.registerUriHandler({
+      handleUri: async (uri) => {
+        if (uri.path !== "/auth") return
+        const q = new URLSearchParams(uri.query)
+        const token = q.get("token") ?? ""
+        if (!loginState || q.get("state") !== loginState || !token.startsWith("tilo_")) {
+          void vscode.window.showErrorMessage("Tilo: el inicio de sesión no coincide. Probá de nuevo desde VSCode.")
+          return
+        }
+        loginState = null
+        const url = (q.get("url") ?? "").replace(/\/$/, "")
+        const cfg = state.config()
+        if (/^https?:\/\/\S+$/.test(url) && url !== cfg.get<string>("apiUrl")) await cfg.update("apiUrl", url, vscode.ConfigurationTarget.Global)
+        await state.setToken(token)
+        await state.refresh()
+        void vscode.window.showInformationMessage(state.day ? `Tilo conectado. ¡Hola, ${state.view?.name || "crack"}!` : "Tilo conectado.")
+      },
+    }),
+  )
+
   const commands: Record<string, (...args: never[]) => unknown> = {
+    "tilo.login": async () => {
+      const url = (state.config().get<string>("apiUrl") || "https://tiloapp.vercel.app").replace(/\/$/, "")
+      loginState = randomBytes(16).toString("hex")
+      const q = new URLSearchParams({ scheme: vscode.env.uriScheme, state: loginState })
+      await vscode.env.openExternal(vscode.Uri.parse(`${url}/api/connect/vscode?${q}`))
+    },
     "tilo.refresh": () => state.refresh(),
     "tilo.prevDay": () => state.setDate(addDays(state.date, -1)),
     "tilo.nextDay": () => state.setDate(addDays(state.date, 1)),
