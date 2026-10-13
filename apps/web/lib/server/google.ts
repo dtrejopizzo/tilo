@@ -75,6 +75,17 @@ export async function googleToken(userId: string, sub: string): Promise<string> 
   return t.access_token
 }
 
+// Google Health rejects tokens that also carry Gmail or Calendar scopes (DISALLOWED_OAUTH_SCOPES).
+// The connection holds one refresh token with every scope, so mint a down-scoped access token
+// with only the health scopes. It isn't stored, so the main token keeps Gmail and Calendar.
+export async function googleHealthToken(userId: string, sub: string): Promise<string> {
+  const tokens = await loadTokens(userId, "google", sub)
+  if (!tokens) throw new Error("Google not connected")
+  if (!tokens.refreshToken) throw new Error("invalid_grant: reconnect Google")
+  const t = await tokenRequest({ refresh_token: tokens.refreshToken, grant_type: "refresh_token", scope: GOOGLE_SCOPES.health.join(" ") })
+  return t.access_token
+}
+
 async function gget<T>(token: string, url: string): Promise<T> {
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
   if (!res.ok) throw new Error(`Google ${new URL(url).pathname}: ${res.status} ${await res.text().catch(() => "")}`.slice(0, 300))
@@ -299,7 +310,7 @@ async function syncGoogleBody(userId: string, token: string, from: string, to: s
     listPoints(token, "weight", `weight.sample_time.physical_time >= "${from}T00:00:00Z" AND weight.sample_time.physical_time < "${to}T00:00:00Z"`).catch(() => []),
     listPoints(token, "body-fat", `body_fat.sample_time.physical_time >= "${from}T00:00:00Z" AND body_fat.sample_time.physical_time < "${to}T00:00:00Z"`).catch(() => []),
     listPoints(token, "height", `height.sample_time.physical_time >= "2000-01-01T00:00:00Z"`, 5).catch(() => []),
-    listPoints(token, "sleep", `sleep.interval.end_time >= "${from}T00:00:00Z" AND sleep.interval.end_time < "${to}T23:59:59Z"`, 25).catch(() => []),
+    listPoints(token, "sleep", `sleep.interval.end_time >= "${from}T00:00:00Z" AND sleep.interval.end_time < "${to}T23:59:59Z"`, 100).catch(() => []),
   ])
   // Points come newest first: keep the latest sample of each day
   for (const p of weight) {
@@ -336,9 +347,39 @@ async function syncGoogleBody(userId: string, token: string, from: string, to: s
   return [...weights].map(([date, w]) => ({ date, ...w }))
 }
 
+const ROLLUP_TYPES = ["steps", "distance", "active-energy-burned", "daily-resting-heart-rate"] as const
+
+// Daily rollups in 30-day chunks, so a backfill of months stays within the API's range limits.
+// Throws only if every request failed (e.g. API disabled, bad scopes) so the error reaches last_error.
+async function rollups(token: string, from: string, to: string) {
+  const chunks: [string, string][] = []
+  for (let a = from; a < to; ) {
+    const b = new Date(Math.min(Date.parse(`${a}T00:00:00Z`) + 30 * 86_400_000, Date.parse(`${to}T00:00:00Z`))).toISOString().slice(0, 10)
+    chunks.push([a, b])
+    a = b
+  }
+  const out: Record<string, Awaited<ReturnType<typeof rollup>>> = {}
+  const errors: unknown[] = []
+  let ok = 0
+  for (const type of ROLLUP_TYPES) {
+    out[type] = []
+    for (const [a, b] of chunks) {
+      try {
+        out[type].push(...(await rollup(token, type, a, b)))
+        ok++
+      } catch (e) {
+        errors.push(e)
+      }
+    }
+  }
+  if (ok === 0 && errors.length) throw errors[0]
+  for (const e of errors.slice(0, 3)) console.error("[google health]", e)
+  return out
+}
+
 export async function syncGoogleHealth(userId: string, sub: string, days = 3) {
   try {
-    const token = await googleToken(userId, sub)
+    const token = await googleHealthToken(userId, sub)
     const to = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
     const from = new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10)
     const byDate = new Map<string, Record<string, number | string>>()
@@ -346,12 +387,8 @@ export async function syncGoogleHealth(userId: string, sub: string, days = 3) {
       if (!date || v == null) return
       byDate.set(date, { ...(byDate.get(date) ?? { date }), [key]: v })
     }
-    const [steps, distance, active, resting] = await Promise.all([
-      rollup(token, "steps", from, to).catch(() => []),
-      rollup(token, "distance", from, to).catch(() => []),
-      rollup(token, "active-energy-burned", from, to).catch(() => []),
-      rollup(token, "daily-resting-heart-rate", from, to).catch(() => []),
-    ])
+    const r0 = await rollups(token, from, to)
+    const [steps, distance, active, resting] = ROLLUP_TYPES.map((t) => r0[t])
     for (const p of steps) set(p.date, "steps", firstNumber(p.value, /count|sum/i))
     for (const p of distance) {
       const v = firstNumber(p.value, /meters|millimeters|sum/i)

@@ -5,6 +5,7 @@ import { connectGoogle, gmailSnapshot, GOOGLE_SCOPES, syncGoogleHealth } from "@
 import { supabaseAdmin } from "@/lib/supabase/server"
 
 export const runtime = "nodejs"
+export const maxDuration = 300
 
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
       const { data: c } = await supabaseAdmin().from("connections").select("account_email").eq("user_id", state.u).eq("provider", "google").eq("external_id", sub).single()
       const today = new Date().toISOString().slice(0, 10)
       if (GOOGLE_SCOPES.gmail.every((s) => scopes.includes(s))) await gmailSnapshot(state.u, sub, c?.account_email ?? "", today, today).catch((e) => console.error("[gmail]", e))
-      if (GOOGLE_SCOPES.health.every((s) => scopes.includes(s))) await syncGoogleHealth(state.u, sub, 14).catch((e) => console.error("[google health]", e))
+      if (GOOGLE_SCOPES.health.every((s) => scopes.includes(s))) await syncGoogleHealth(state.u, sub, 365).catch((e) => console.error("[google health]", e))
     })
     return NextResponse.redirect(new URL(`${env.appUrl()}${back}${back.includes("?") ? "&" : "?"}connected=google`))
   } catch (error) {
