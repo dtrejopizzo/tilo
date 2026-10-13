@@ -44,7 +44,7 @@ Copia perfil, objetivos, tareas (con proyectos), hábitos con su historial, comi
 | --- | --- |
 | `profiles`, `goals`, `settings` | Perfil (altura, sexo, nacimiento, % grasa), objetivos y preferencias |
 | `tasks`, `projects` | Tareas (manuales, desde código, desde mail o MCP) |
-| `habits`, `habit_logs` | Hábitos diarios/semanales; `auto_rule` los completa desde actividades |
+| `habits`, `habit_logs` | Hábitos diarios/semanales con sus días de la semana; `auto_rule` los completa desde actividades |
 | `supplements`, `supplement_logs` | Stack de suplementos por momento del día, con stock |
 | `meals`, `water_logs`, `caffeine_logs`, `weight_logs` | Nutrición (macros y micros), agua, cafeína, peso y % grasa |
 | `exercises`, `routines`, `routine_items`, `workouts`, `workout_sets` | Gimnasio: biblioteca, rutinas por día, series con peso, reps y RPE |

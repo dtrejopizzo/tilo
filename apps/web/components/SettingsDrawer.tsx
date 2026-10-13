@@ -202,7 +202,7 @@ function HabitsSection({ cat, reload }: { cat: Catalog; reload: () => void }) {
   const save = useSave()
   const patch = (id: string, values: Record<string, unknown>) => save(() => crud.update("habits", id, values))
   return (
-    <Section id="habits" title="Hábitos" desc="Diarios cuentan para la racha; semanales tienen un objetivo de veces por semana. Con “auto” se completan solos desde tus actividades.">
+    <Section id="habits" title="Hábitos" desc="Marcá qué días querés cumplir cada uno: esos días aparecen en Hoy y en los recordatorios. Los diarios cuentan para la racha; los semanales se cumplen con llegar a la cantidad de días marcados. Con “auto” se completan solos desde tus actividades.">
       <div className="list-edit">
         {cat.habits.map((h) => {
           const auto = h.auto_rule as { activity_types?: string[]; min_minutes?: number } | null
@@ -210,11 +210,11 @@ function HabitsSection({ cat, reload }: { cat: Catalog; reload: () => void }) {
             <div key={h.id} className="list-row">
               <div className="inline">
                 <input className="input" defaultValue={String(h.name)} aria-label="Nombre" onBlur={(e) => e.target.value !== h.name && patch(h.id, { name: e.target.value })} />
-                <select className="select" defaultValue={String(h.frequency)} aria-label="Frecuencia" onChange={(e) => patch(h.id, { frequency: e.target.value, per_week: e.target.value === "daily" ? 7 : 3 }).then(reload)}>
+                <select className="select" defaultValue={String(h.frequency)} aria-label="Frecuencia" onChange={(e) => patch(h.id, { frequency: e.target.value }).then(reload)}>
                   <option value="daily">Diario</option><option value="weekly">Semanal</option>
                 </select>
-                {h.frequency === "weekly" && <input className="input num" type="number" min={1} max={7} defaultValue={Number(h.per_week)} aria-label="Veces por semana" onBlur={(e) => patch(h.id, { per_week: Number(e.target.value) })} />}
-                <input className="input" type="time" defaultValue={String(h.reminder_time ?? "").slice(0, 5)} aria-label="Momento del día" onBlur={(e) => patch(h.id, { reminder_time: e.target.value || null })} />
+                <Days value={(h.days as number[]) ?? [0, 1, 2, 3, 4, 5, 6]} onChange={(v) => v.length && patch(h.id, { days: v, per_week: v.length }).then(reload)} />
+                <input className="input" type="time" defaultValue={String(h.reminder_time ?? "").slice(0, 5)} aria-label="Hora del recordatorio" onBlur={(e) => patch(h.id, { reminder_time: e.target.value || null })} />
                 <select className="select" defaultValue={auto?.activity_types?.[0] ?? ""} aria-label="Completar automáticamente" onChange={(e) => patch(h.id, { auto_rule: e.target.value ? { activity_types: [e.target.value], min_minutes: 15 } : null })}>
                   <option value="">Manual</option><option value="run">Auto: correr</option><option value="ride">Auto: bici</option><option value="swim">Auto: natación</option><option value="walk">Auto: caminar</option><option value="strength">Auto: gimnasio</option><option value="yoga">Auto: yoga</option>
                 </select>

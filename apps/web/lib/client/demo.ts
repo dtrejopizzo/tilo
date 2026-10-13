@@ -84,12 +84,13 @@ function seed(): Store {
     tokens: [{ id: "tok1", name: "VSCode MacBook", preview: "tilo_x7Hk…9fQ2", kind: "personal", createdAt: addDays(today, -20), lastUsedAt: today }],
   }
 
+  const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
   s.habits = [
-    { id: "h-med", name: "Meditar 10 min", frequency: "daily", per_week: 7, reminder_time: "07:00", auto_rule: null, position: 0 },
-    { id: "h-read", name: "Leer 20 páginas", frequency: "daily", per_week: 7, reminder_time: "22:30", auto_rule: null, position: 1 },
-    { id: "h-sugar", name: "Sin azúcar", frequency: "daily", per_week: 7, reminder_time: null, auto_rule: null, position: 2 },
-    { id: "h-run", name: "Correr", frequency: "weekly", per_week: 3, reminder_time: null, auto_rule: { activity_types: ["run"], min_minutes: 15 }, position: 3 },
-    { id: "h-eng", name: "Inglés 30 min", frequency: "weekly", per_week: 3, reminder_time: "19:00", auto_rule: null, position: 4 },
+    { id: "h-med", name: "Meditar 10 min", frequency: "daily", per_week: 7, days: ALL_DAYS, reminder_time: "07:00", auto_rule: null, position: 0 },
+    { id: "h-read", name: "Leer 20 páginas", frequency: "daily", per_week: 7, days: ALL_DAYS, reminder_time: "22:30", auto_rule: null, position: 1 },
+    { id: "h-sugar", name: "Sin azúcar", frequency: "daily", per_week: 7, days: ALL_DAYS, reminder_time: null, auto_rule: null, position: 2 },
+    { id: "h-run", name: "Correr", frequency: "weekly", per_week: 3, days: [0, 2, 4], reminder_time: null, auto_rule: { activity_types: ["run"], min_minutes: 15 }, position: 3 },
+    { id: "h-eng", name: "Inglés 30 min", frequency: "weekly", per_week: 3, days: [1, 3, 5], reminder_time: "19:00", auto_rule: null, position: 4 },
   ]
   const preset = (key: string) => SUPPLEMENT_PRESETS.find((p) => p.key === key)!
   s.supplements = [
@@ -304,7 +305,7 @@ function buildDay(s: Store, date: string): DayData {
     settings: s.settings,
     projects: s.projects,
     tasks: s.tasks.filter((t) => t.status === "todo" || t.completed_on === date).sort((a, b) => (a.due_date ?? "9999").localeCompare(b.due_date ?? "9999")),
-    habits: s.habits.filter((h) => !h.archived).map((h) => ({
+    habits: s.habits.filter((h) => !h.archived && (h.days.includes(wd) || s.habitLogs.some((l) => l.habit_id === h.id && l.date === date))).map((h) => ({
       ...h,
       done: s.habitLogs.some((l) => l.habit_id === h.id && l.date === date),
       auto: s.habitLogs.some((l) => l.habit_id === h.id && l.date === date && l.source === "auto"),
@@ -363,7 +364,7 @@ function buildRange(s: Store, from: string, to: string): RangeData {
   return {
     from, to, goals: s.goals, settings: s.settings,
     summaries: dates.map((d) => summaryFor(s, d)),
-    habits: s.habits.filter((h) => !h.archived).map((h) => ({ id: h.id, name: h.name, frequency: h.frequency, per_week: h.per_week, dates: s.habitLogs.filter((l) => l.habit_id === h.id && l.date >= from && l.date <= to).map((l) => l.date).sort() })),
+    habits: s.habits.filter((h) => !h.archived).map((h) => ({ id: h.id, name: h.name, frequency: h.frequency, per_week: h.per_week, days: h.days, dates: s.habitLogs.filter((l) => l.habit_id === h.id && l.date >= from && l.date <= to).map((l) => l.date).sort() })),
     weights: s.weights.filter((w) => w.date >= from && w.date <= to),
     energy: withEnergy
       ? dates.filter((d) => d <= localDate()).map((d) => {
@@ -640,7 +641,7 @@ async function handle(method: string, path: string, body: Record<string, unknown
 
 function defaultsFor(table: string, date: string): Record<string, unknown> {
   switch (table) {
-    case "habits": return { frequency: "daily", per_week: 7, reminder_time: null, auto_rule: null, position: 99 }
+    case "habits": return { frequency: "daily", per_week: 7, days: [0, 1, 2, 3, 4, 5, 6], reminder_time: null, auto_rule: null, position: 99 }
     case "supplements": return { dose: 1, unit: "caps", slot: "any", days: [0, 1, 2, 3, 4, 5, 6], with_food: false, stock_doses: null, nutrients: null, position: 99 }
     case "routines": return { weekdays: [], notes: null }
     case "routine_items": return { sets: 3, reps_min: 8, reps_max: 12, rpe: null, rest_sec: 120, superset_group: null, notes: null }

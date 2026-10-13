@@ -9,7 +9,7 @@ export const runtime = "nodejs"
 const ENTITIES: Record<string, string[]> = {
   tasks: ["title", "notes", "project_id", "priority", "due_date", "position"],
   projects: ["name", "color", "position", "archived"],
-  habits: ["name", "frequency", "per_week", "reminder_time", "auto_rule", "position", "archived"],
+  habits: ["name", "frequency", "per_week", "days", "reminder_time", "auto_rule", "position", "archived"],
   supplements: ["name", "dose", "unit", "slot", "days", "with_food", "stock_doses", "nutrients", "position", "archived"],
   meals: ["date", "eaten_at", "meal_type", "description", "kcal", "protein_g", "carbs_g", "fat_g", "fiber_g", "alcohol_g", "caffeine_mg"],
   water_logs: ["date", "ml"],

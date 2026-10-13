@@ -22,14 +22,24 @@ interface Conns {
 interface Onboarding { connect?: boolean; goals?: boolean; habits?: boolean }
 interface SettingsRes { profile: Profile; goals: Goals; settings: { onboarding?: Onboarding } }
 interface Catalog {
-  habits: { id: string; name: string; frequency: string; per_week: number; reminder_time: string | null }[]
+  habits: { id: string; name: string; frequency: string; per_week: number; days: number[] | null }[]
   supplements: { id: string; name: string }[]
 }
-interface HabitRow { name: string; frequency: "daily" | "weekly"; per_week: number; reminder_time: string; auto: string }
+interface HabitRow { name: string; frequency: "daily" | "weekly"; days: number[]; auto: string }
 interface SuppRow { name: string; dose: number; unit: SupplementUnit; slot: SupplementSlot; days: number[]; with_food: boolean; nutrients: Record<string, number> | null }
 const UNITS: SupplementUnit[] = ["mg", "mcg", "iu", "g", "ml", "caps", "scoop"]
 const SUPP_SUGGESTED = ["vitamin_c", "whey", "electrolytes"]
 const WEEKDAYS = ["L", "M", "X", "J", "V", "S", "D"]
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
+
+// "L a V", "L, X, V", "todos los días"…
+function daysLabel(days: number[] | null | undefined): string {
+  const d = [...(days ?? ALL_DAYS)].sort()
+  if (d.length === 7) return "todos los días"
+  if (d.length === 0) return "ningún día"
+  const consecutive = d.every((x, i) => i === 0 || x === d[i - 1] + 1)
+  return consecutive && d.length > 2 ? `${WEEKDAYS[d[0]]} a ${WEEKDAYS[d[d.length - 1]]}` : d.map((x) => WEEKDAYS[x]).join(", ")
+}
 
 function Days({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
   return (
@@ -48,15 +58,15 @@ const STEPS: { id: StepId; title: string; short: string }[] = [
   { id: 4, title: "Hábitos y suplementos", short: "Hábitos" },
 ]
 
-const HABIT_PRESETS: { name: string; auto?: string; weekly?: number }[] = [
-  { name: "Entrenar", auto: "strength", weekly: 3 },
-  { name: "Correr", auto: "run", weekly: 3 },
-  { name: "Nadar", auto: "swim", weekly: 2 },
+const HABIT_PRESETS: { name: string; auto?: string; days?: number[] }[] = [
+  { name: "Entrenar", auto: "strength", days: [0, 2, 4] },
+  { name: "Correr", auto: "run", days: [1, 3, 5] },
+  { name: "Nadar", auto: "swim", days: [1, 3] },
   { name: "Caminar 30 min", auto: "walk" },
   { name: "Leer", },
   { name: "Meditar" },
   { name: "Estirar" },
-  { name: "Ir a misa", weekly: 1 },
+  { name: "Ir a misa", days: [6] },
   { name: "Dormir 7 h o más" },
   { name: "Sin pantallas antes de dormir" },
 ]
@@ -251,20 +261,20 @@ export function ConnectWizard() {
   const [suppRows, setSuppRows] = useState<SuppRow[]>([])
   const haveHabit = (name: string) => cat.habits.some((h) => h.name.toLowerCase() === name.trim().toLowerCase())
   const haveSupp = (name: string) => cat.supplements.some((x) => x.name.toLowerCase() === name.trim().toLowerCase())
-  const addHabitRow = (r: Partial<HabitRow> = {}) => setHabitRows((rows) => [...rows, { name: "", frequency: "daily", per_week: 3, reminder_time: "", auto: "", ...r }])
+  const addHabitRow = (r: Partial<HabitRow> = {}) => setHabitRows((rows) => [...rows, { name: "", frequency: "daily", days: ALL_DAYS, auto: "", ...r }])
   const addSuppRow = (r: Partial<SuppRow> = {}) => setSuppRows((rows) => [...rows, { name: "", dose: 1, unit: "caps", slot: "breakfast", days: [0, 1, 2, 3, 4, 5, 6], with_food: false, nutrients: null, ...r }])
   const patchHabit = (i: number, v: Partial<HabitRow>) => setHabitRows((rows) => rows.map((r, j) => (j === i ? { ...r, ...v } : r)))
   const patchSupp = (i: number, v: Partial<SuppRow>) => setSuppRows((rows) => rows.map((r, j) => (j === i ? { ...r, ...v } : r)))
-  const pendingCount = habitRows.filter((r) => r.name.trim()).length + suppRows.filter((r) => r.name.trim()).length
+  const pendingCount = habitRows.filter((r) => r.name.trim() && r.days.length).length + suppRows.filter((r) => r.name.trim() && r.days.length).length
   const saveHabits = () =>
     run(async () => {
       let pos = cat.habits.length
       for (const r of habitRows) {
         const name = r.name.trim()
-        if (!name || haveHabit(name)) continue
+        if (!name || haveHabit(name) || !r.days.length) continue
+        const days = [...r.days].sort()
         await crud.create("habits", {
-          name, position: pos++, frequency: r.frequency, per_week: r.frequency === "daily" ? 7 : r.per_week,
-          reminder_time: r.reminder_time || null,
+          name, position: pos++, frequency: r.frequency, per_week: days.length, days,
           auto_rule: r.auto ? { activity_types: [r.auto], min_minutes: 15 } : null,
         })
       }
@@ -475,18 +485,18 @@ export function ConnectWizard() {
           <>
             <section className="section">
               <h3>Hábitos</h3>
-              <p>Cargá todos los que quieras. Los diarios cuentan para la racha; los semanales tienen una meta de veces por semana. La hora sirve para los recordatorios y “auto” los completa solos con tus entrenamientos.</p>
+              <p>Cargá todos los que quieras y marcá qué días querés cumplirlos: Tilo te los recuerda esos días y, si no se cumplen, te pregunta por qué. Los diarios cuentan para la racha los días marcados; los semanales se cumplen con llegar a la cantidad de días marcados, en cualquier orden.</p>
               <div className="picks">
                 <span className="hint">Sugeridos:</span>
                 {HABIT_PRESETS.map((h) => (
-                  <button key={h.name} className="pick" disabled={haveHabit(h.name) || habitRows.some((r) => r.name === h.name)} onClick={() => addHabitRow({ name: h.name, frequency: h.weekly ? "weekly" : "daily", per_week: h.weekly ?? 3, auto: h.auto ?? "" })}>+ {h.name}</button>
+                  <button key={h.name} className="pick" disabled={haveHabit(h.name) || habitRows.some((r) => r.name === h.name)} onClick={() => addHabitRow({ name: h.name, frequency: h.days ? "weekly" : "daily", days: h.days ?? ALL_DAYS, auto: h.auto ?? "" })}>+ {h.name}</button>
                 ))}
               </div>
               {cat.habits.length > 0 && (
                 <div className="list-edit">
                   {cat.habits.map((h) => (
                     <div key={h.id} className="list-row" style={{ opacity: .75 }}>
-                      <div className="inline"><CircleCheck aria-hidden="true" style={{ width: 16, height: 16, color: "var(--leaf)" }} /><span>{h.name}</span><span className="hint">{h.frequency === "weekly" ? `${h.per_week}× por semana` : "diario"}{h.reminder_time ? ` · ${String(h.reminder_time).slice(0, 5)}` : ""}</span></div>
+                      <div className="inline"><CircleCheck aria-hidden="true" style={{ width: 16, height: 16, color: "var(--leaf)" }} /><span>{h.name}</span><span className="hint">{h.frequency === "weekly" ? `${h.per_week}× por semana` : "diario"} · {daysLabel(h.days)}</span></div>
                       <span className="hint">ya cargado</span>
                     </div>
                   ))}
@@ -498,14 +508,10 @@ export function ConnectWizard() {
                     <div className="inline">
                       <input className="input" placeholder="Hábito (ej: Nadar)" aria-label="Nombre" value={r.name} onChange={(e) => patchHabit(i, { name: e.target.value })} />
                       <select className="select" aria-label="Frecuencia" value={r.frequency} onChange={(e) => patchHabit(i, { frequency: e.target.value as HabitRow["frequency"] })}>
-                        <option value="daily">Todos los días</option><option value="weekly">Por semana</option>
+                        <option value="daily">Diario</option><option value="weekly">Semanal</option>
                       </select>
-                      {r.frequency === "weekly" && <input className="input num" type="number" min={1} max={7} aria-label="Veces por semana" value={r.per_week} onChange={(e) => patchHabit(i, { per_week: Math.min(7, Math.max(1, Number(e.target.value) || 1)) })} />}
-                      {r.frequency === "weekly" && <span className="hint">veces/sem</span>}
-                      <input className="input" type="time" aria-label="Hora del recordatorio" value={r.reminder_time} onChange={(e) => patchHabit(i, { reminder_time: e.target.value })} />
-                      <select className="select" aria-label="Completar automáticamente" value={r.auto} onChange={(e) => patchHabit(i, { auto: e.target.value })}>
-                        <option value="">Manual</option><option value="run">Auto: correr</option><option value="ride">Auto: bici</option><option value="swim">Auto: natación</option><option value="walk">Auto: caminar</option><option value="strength">Auto: gimnasio</option><option value="yoga">Auto: yoga</option>
-                      </select>
+                      <Days value={r.days} onChange={(days) => patchHabit(i, { days })} />
+                      <span className="hint">{r.days.length === 0 ? "elegí al menos un día" : r.frequency === "weekly" ? `${r.days.length}× por semana` : daysLabel(r.days)}</span>
                     </div>
                     <button className="iconbtn" aria-label="Quitar" onClick={() => setHabitRows((rows) => rows.filter((_, j) => j !== i))}><X /></button>
                   </div>

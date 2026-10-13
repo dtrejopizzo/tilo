@@ -66,6 +66,7 @@ export interface Habit {
   name: string
   frequency: "daily" | "weekly"
   per_week: number
+  days: number[] // 0 = Monday … 6 = Sunday; the habit is expected (and reminded) on these days
   reminder_time: string | null
   auto_rule: { activity_types?: string[]; min_minutes?: number } | null
   position: number
@@ -296,7 +297,7 @@ export interface RangeData {
   goals: Goals
   settings?: Record<string, unknown> | null
   summaries: DailySummary[]
-  habits: { id: string; name: string; frequency: "daily" | "weekly"; per_week: number; dates: string[] }[]
+  habits: { id: string; name: string; frequency: "daily" | "weekly"; per_week: number; days?: number[]; dates: string[] }[]
   weights: { date: string; kg: number; body_fat_pct: number | null }[]
   energy: EnergyDay[]
   metrics: DailyMetric[]
@@ -333,7 +334,7 @@ export interface StatsResponse {
   to: string
   targets: { calories: number; water: number; steps?: number; protein?: number; weeklySets?: number; sleepMin?: number; freezesPerMonth?: number }
   days: DayStats[] // one entry per day from `from` to `to`, inclusive
-  habits: { id: string; name: string; frequency: "Daily" | "Weekly"; completedDates: string[] }[]
+  habits: { id: string; name: string; frequency: "Daily" | "Weekly"; days?: number[]; completedDates: string[] }[] // days: 0 = Monday … 6 = Sunday; missing = every day
   weight: { date: string; value: number }[]
   muscles?: { date: string; muscle: string; sets: number; volumeKg: number }[]
   lifts?: { name: string; date: string; weightKg: number; reps: number; e1rm: number }[]

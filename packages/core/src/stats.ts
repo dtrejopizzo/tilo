@@ -83,8 +83,14 @@ export function buildMonthStats(month: string, data: StatsResponse, today: strin
   const [y, m] = month.split("-").map(Number)
   const dailyHabits = data.habits.filter((h) => h.frequency !== "Weekly")
   const doneSets = new Map(data.habits.map((h) => [h.id, new Set(h.completedDates)]))
-  const dailyDone = (date: string) => dailyHabits.filter((h) => doneSets.get(h.id)!.has(date)).length
-  const isPerfect = (date: string) => dailyHabits.length > 0 && dailyDone(date) === dailyHabits.length
+  const weekdayOf = (date: string) => (new Date(Date.parse(`${date}T00:00:00Z`)).getUTCDay() + 6) % 7
+  // Daily habits expected on a date: those scheduled for its weekday (rest days don't count against you)
+  const scheduled = (date: string) => {
+    const wd = weekdayOf(date)
+    return dailyHabits.filter((h) => !h.days || h.days.includes(wd))
+  }
+  const dailyDone = (date: string) => scheduled(date).filter((h) => doneSets.get(h.id)!.has(date)).length
+  const isPerfect = (date: string) => dailyHabits.length > 0 && dailyDone(date) === scheduled(date).length
 
   const days: StatsDay[] = data.days
     .filter((d) => d.date >= from && d.date <= to)
@@ -112,7 +118,7 @@ export function buildMonthStats(month: string, data: StatsResponse, today: strin
   const current = isCurrentMonth && dailyHabits.length > 0 ? streak.current : null
   const best = streak.best
 
-  const possible = dailyHabits.length * elapsed.length
+  const possible = elapsed.reduce((s, d) => s + scheduled(d.date).length, 0)
   const loggedMeals = elapsed.filter((d) => d.mealsLogged > 0)
   const busiest = elapsed.reduce<StatsDay | null>(
     (top, d) => (d.tasksCompleted > (top?.tasksCompleted ?? 0) ? d : top),
@@ -264,7 +270,7 @@ export function rangeToStats(
     },
     days,
     habits: range.habits.map((h) => ({
-      id: h.id, name: h.name, frequency: h.frequency === "weekly" ? "Weekly" : "Daily", completedDates: h.dates,
+      id: h.id, name: h.name, frequency: h.frequency === "weekly" ? "Weekly" : "Daily", days: h.days, completedDates: h.dates,
     })),
     weight: range.weights.map((w) => ({ date: w.date, value: Number(w.kg) })),
     muscles: range.muscle_sets.map((m) => ({ date: m.date, muscle: m.muscle, sets: m.sets, volumeKg: Number(m.volume_kg) })),

@@ -174,6 +174,20 @@ describe("RPCs", () => {
     expect(day.supplements.map((s: any) => s.name)).not.toContain("Creatina")
   })
 
+  it("get_day only shows habits scheduled for that weekday, unless already logged", async () => {
+    await asUser(db, ALICE)
+    const sunday = await one<{ id: string }>("insert into habits (user_id, name, frequency, per_week, days) values ($1, 'Ir a misa', 'weekly', 1, '{6}') returning id", [ALICE])
+    await db.query("insert into habits (user_id, name, days) values ($1, 'Nadar', '{0,1,2,3,4,5}')", [ALICE])
+    let { get_day: day } = await one<{ get_day: any }>("select get_day($1)", [DAY]) // a Thursday
+    const names = day.habits.map((h: any) => h.name)
+    expect(names).toContain("Nadar")
+    expect(names).not.toContain("Ir a misa")
+    expect(day.habits.find((h: any) => h.name === "Nadar").days).toEqual([0, 1, 2, 3, 4, 5])
+    await db.query("insert into habit_logs (habit_id, user_id, date) values ($1, $2, $3)", [sunday.id, ALICE, DAY])
+    ;({ get_day: day } = await one<{ get_day: any }>("select get_day($1)", [DAY]))
+    expect(day.habits.find((h: any) => h.name === "Ir a misa")).toMatchObject({ done: true })
+  })
+
   it("get_day includes today's routine with the last performance per exercise", async () => {
     await asUser(db, ALICE)
     const bench = await one<{ id: string }>("select id from exercises where slug = 'bench-press'")
