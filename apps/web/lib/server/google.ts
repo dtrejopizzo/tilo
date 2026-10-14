@@ -399,7 +399,8 @@ const seconds = (d: unknown) => (typeof d === "string" && /^\d+(\.\d+)?s$/.test(
 // Exercise sessions (Pixel Watch, Fitbit, and anything an app wrote to Health Connect, e.g. Strava)
 // become activities; sessions also recorded by Strava are merged by time overlap in ingest().
 async function syncGoogleExercise(token: string, from: string, to: string): Promise<NonNullable<IngestPayload["activities"]>> {
-  const points = await listPoints(token, "exercise", `exercise.interval.start_time >= "${from}T00:00:00Z" AND exercise.interval.start_time < "${to}T00:00:00Z"`, 25)
+  // Sessions filter on civil (local) time without an offset, unlike samples which use physical_time
+  const points = await listPoints(token, "exercise", `exercise.interval.civil_start_time >= "${from}T00:00:00" AND exercise.interval.civil_start_time < "${to}T00:00:00"`, 25)
   const out: NonNullable<IngestPayload["activities"]> = []
   for (const p of points) {
     const ex = p.exercise as Record<string, unknown> | undefined
