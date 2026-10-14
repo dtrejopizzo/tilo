@@ -402,6 +402,8 @@ async function syncGoogleExercise(token: string, from: string, to: string): Prom
   // Sessions filter on civil (local) time without an offset, unlike samples which use physical_time
   const points = await listPoints(token, "exercise", `exercise.interval.civil_start_time >= "${from}T00:00:00" AND exercise.interval.civil_start_time < "${to}T00:00:00"`, 25)
   const out: NonNullable<IngestPayload["activities"]> = []
+  // Until the response shape is confirmed against real data: say what came back if nothing parses
+  const unparsed = () => new Error(`${points.length} sesiones recibidas, ninguna con interval.startTime/endTime; claves: ${Object.keys(points[0] ?? {}).join(",")} / ${Object.keys((points[0]?.exercise as object) ?? {}).join(",")}`.slice(0, 220))
   for (const p of points) {
     const ex = p.exercise as Record<string, unknown> | undefined
     const iv = ex?.interval as { startTime?: string; endTime?: string } | undefined
@@ -425,6 +427,7 @@ async function syncGoogleExercise(token: string, from: string, to: string): Prom
       elevation_m: num(m.elevationGainMillimeters) != null ? num(m.elevationGainMillimeters)! / 1000 : undefined,
     })
   }
+  if (points.length && !out.length) throw unparsed()
   return out
 }
 
