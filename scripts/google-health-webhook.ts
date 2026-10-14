@@ -22,8 +22,9 @@ if (existsSync(envFile)) {
 }
 
 const SUBSCRIBER_ID = process.env.GOOGLE_HEALTH_SUBSCRIBER_ID ?? "tilo"
-// What Tilo reads (apps/web/lib/server/google.ts). Notifications only arrive for types the user consented to.
-const DATA_TYPES = ["steps", "distance", "active-energy-burned", "daily-resting-heart-rate", "exercise", "sleep", "weight", "body-fat", "height"]
+// Types with webhook support that Tilo reads (apps/web/lib/server/google.ts). Any notification
+// triggers a full sync of the changed days, so active energy rides along with steps/distance.
+const DATA_TYPES = ["steps", "distance", "daily-resting-heart-rate", "exercise", "sleep", "weight", "body-fat", "height"]
 
 function need(name: string): string {
   const v = process.env[name]
@@ -58,7 +59,8 @@ async function main() {
   const token = process.env.GOOGLE_ACCESS_TOKEN ?? (process.env.GOOGLE_SERVICE_ACCOUNT_JSON ? await serviceAccountToken(process.env.GOOGLE_SERVICE_ACCOUNT_JSON) : need("GOOGLE_ACCESS_TOKEN"))
 
   const base = `https://health.googleapis.com/v4/projects/${project}/subscribers`
-  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }
+  // A user token (gcloud) must name the project that pays the (free) quota; a service account doesn't need it
+  const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "x-goog-user-project": project }
   const body = {
     endpointUri: `${appUrl}/api/webhooks/google-health`,
     subscriberConfigs: [{ dataTypes: DATA_TYPES, subscriptionCreatePolicy: "AUTOMATIC" }],

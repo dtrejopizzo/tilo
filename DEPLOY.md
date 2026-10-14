@@ -93,8 +93,11 @@ Sin esto, los datos de Fitbit / Pixel Watch / Health Connect llegan en el sync c
 
 ```sh
 gcloud auth login
-GOOGLE_PROJECT_NUMBER=<número> GOOGLE_ACCESS_TOKEN="$(gcloud auth print-access-token)" npm run health:webhook
+NEXT_PUBLIC_APP_URL=https://<tu-dominio> GOOGLE_PROJECT_NUMBER=<número> \
+  GOOGLE_ACCESS_TOKEN="$(gcloud auth print-access-token)" npm run health:webhook
 ```
+
+(`NEXT_PUBLIC_APP_URL` va explícito porque en `.env.local` suele apuntar a localhost.) Si sos el dueño del proyecto no hace falta ningún rol extra.
 
 Google verifica el endpoint en el momento (manda una llamada con el secreto y otra sin) y queda suscripto para **todos** los usuarios que conectaron Google Health, también los futuros. Si cambiás de dominio, corré el comando de nuevo.
 
