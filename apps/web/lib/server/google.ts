@@ -438,10 +438,12 @@ export async function syncGoogleHealth(userId: string, sub: string, days = 3) {
       byDate.set(date, { ...(byDate.get(date) ?? { date }), [key]: v })
     }
     // Rollups, sessions and body metrics in parallel; the identity lookup is a one-time extra
+    let note: string | null = null // non-fatal problems, shown next to the connection in Settings
     const [r0, activities, weights] = await Promise.all([
       rollups(token, from, to),
       syncGoogleExercise(token, from, to).catch((e) => {
         console.error("[google health] exercise:", e)
+        note = `aviso, sesiones de ejercicio: ${String(e).slice(0, 200)}`
         return []
       }),
       syncGoogleBody(userId, token, from, to, set).catch((e) => {
@@ -461,6 +463,7 @@ export async function syncGoogleHealth(userId: string, sub: string, days = 3) {
     const payload: IngestPayload = { source: "google_health", device: "Google Health", daily: [...byDate.values()] as IngestPayload["daily"], activities, weights }
     const r = await ingest(userId, payload)
     await markSynced(userId, "google", sub)
+    if (note) await supabaseAdmin().from("connections").update({ last_error: note }).eq("user_id", userId).eq("provider", "google").eq("external_id", sub)
     return r
   } catch (error) {
     await markSynced(userId, "google", sub, String(error))

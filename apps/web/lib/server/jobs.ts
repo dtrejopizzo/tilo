@@ -20,8 +20,8 @@ export const STALE_MS = 10 * 60_000
 
 // Frequent pass (every 15 minutes): device data for every connection that hasn't synced lately.
 // Webhooks (Strava, Google Health) usually get there first; this catches anything they missed.
-export async function runSync(): Promise<Record<string, number>> {
-  const stats = { synced: 0, failed: 0, skipped: 0 }
+export async function runSync(): Promise<Record<string, number | string>> {
+  const stats: Record<string, number | string> = { synced: 0, failed: 0, skipped: 0, version: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "dev" }
   const conns = (await listConnections()).filter((c) => c.provider === "strava" || hasFeature(c.scopes, "health"))
   const stale = conns.filter((c) => !c.last_sync_at || Date.now() - Date.parse(c.last_sync_at) > STALE_MS)
   stats.skipped = conns.length - stale.length
@@ -31,9 +31,9 @@ export async function runSync(): Promise<Record<string, number>> {
       stale.slice(i, i + 5).map((c) => (c.provider === "strava" ? syncStrava(c.user_id, c.external_id, 2) : syncGoogleHealth(c.user_id, c.external_id, 2))),
     )
     for (const r of results) {
-      if (r.status === "fulfilled") stats.synced++
+      if (r.status === "fulfilled") (stats.synced as number)++
       else {
-        stats.failed++
+        ;(stats.failed as number)++
         console.error("[sync]", r.reason)
       }
     }
