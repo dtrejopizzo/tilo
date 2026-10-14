@@ -39,7 +39,7 @@ export interface MonthStats {
     streak: { current: number | null; best: number; freezesUsed: number; freezesPerMonth: number }
     sleep: { avg: number; daysOnTarget: number; days: number } | null
     tasks: { total: number; busiest: StatsDay | null }
-    water: { avg: number; daysOnTarget: number }
+    water: { avg: number; daysOnTarget: number; days: number } // averaged over days with water logged
     calories: { avg: number | null; loggedDays: number; daysOnTarget: number }
     sport: { minutes: number; activeDays: number }
     weight: { latest: number; change: number | null } | null
@@ -125,6 +125,7 @@ export function buildMonthStats(month: string, data: StatsResponse, today: strin
     null,
   )
   const weights = data.weight.filter((w) => w.date >= from && w.date <= to)
+  const withWater = elapsed.filter((d) => d.water > 0)
   const withSteps = elapsed.filter((d) => d.steps != null && d.steps > 0)
   const withBalance = elapsed.filter((d) => d.kcalOut != null && d.mealsLogged > 0)
   const withInbox = elapsed.filter((d) => d.inboxTotal != null)
@@ -165,8 +166,9 @@ export function buildMonthStats(month: string, data: StatsResponse, today: strin
       })(),
       tasks: { total: elapsed.reduce((s, d) => s + d.tasksCompleted, 0), busiest },
       water: {
-        avg: elapsed.length ? elapsed.reduce((s, d) => s + d.water, 0) / elapsed.length : 0,
-        daysOnTarget: elapsed.filter((d) => d.water >= data.targets.water).length,
+        avg: withWater.length ? withWater.reduce((s, d) => s + d.water, 0) / withWater.length : 0,
+        daysOnTarget: withWater.filter((d) => d.water >= data.targets.water).length,
+        days: withWater.length,
       },
       calories: {
         avg: loggedMeals.length ? loggedMeals.reduce((s, d) => s + d.calories, 0) / loggedMeals.length : null,

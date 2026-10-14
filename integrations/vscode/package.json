@@ -91,7 +91,8 @@
       {
         "command": "tilo.addTask",
         "title": "Nueva tarea",
-        "category": "Tilo"
+        "category": "Tilo",
+        "icon": "$(add)"
       },
       {
         "command": "tilo.logWater",
@@ -224,6 +225,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "tilo.addTask",
+          "when": "view == tilo.today && viewItem == section-tasks",
+          "group": "inline"
+        },
         {
           "command": "tilo.taskFromInsight",
           "when": "view == tilo.today && viewItem == insight",

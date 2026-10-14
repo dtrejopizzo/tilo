@@ -7,6 +7,7 @@ import { parseQuickAdd } from "@tilo/core/quickAdd"
 import { findPreset, SUPPLEMENT_PRESETS } from "@tilo/core/supplements"
 import { buildToday } from "@tilo/core/today"
 import { bestSet, checkRecords, e1rm, volume } from "@tilo/core/training"
+import { after } from "next/server"
 import { supabaseAdmin } from "../supabase/server"
 import { BadRequestError, NotFoundError } from "./apiRoute"
 import { estimateMeal } from "./ai"
@@ -33,8 +34,14 @@ export class ServerTiloApi implements TiloApi {
 
   async getDay(date: string): Promise<DayData> {
     const day = must(await this.db.rpc<DayData>("get_day", { p_date: date }), "get_day")
-    // Keep the energy cache that Stats reads in sync with what the user sees
-    void this.cacheEnergy(day).catch((e) => console.error("[energy] cache failed:", e))
+    // Keep the energy cache that Stats reads in sync with what the user sees. after() runs once
+    // the response is sent (Vercel keeps the function alive for it); outside a request, just run it.
+    const cache = () => this.cacheEnergy(day).catch((e) => console.error("[energy] cache failed:", e))
+    try {
+      after(cache)
+    } catch {
+      void cache()
+    }
     return day
   }
 
@@ -162,8 +169,9 @@ export class ServerTiloApi implements TiloApi {
     const rows = must(await this.db.select("projects", "id, name"), "projects") as unknown as { id: string; name: string }[]
     const found = rows.find((p) => p.name.toLowerCase() === name.toLowerCase())
     if (found) return found.id
-    const { data } = await supabaseAdmin().from("projects").insert({ user_id: this.userId, name, position: rows.length }).select("id").single()
-    return data?.id ?? null
+    const { data, error } = await supabaseAdmin().from("projects").insert({ user_id: this.userId, name: name.slice(0, 60), position: rows.length }).select("id").single()
+    if (error) throw new BadRequestError(`No pude crear el proyecto "${name}": ${error.message}`)
+    return data.id
   }
 
   async addTask(input: Parameters<TiloApi["addTask"]>[0]): Promise<Task> {
@@ -177,13 +185,14 @@ export class ServerTiloApi implements TiloApi {
       })
       .select("*")
       .single()
-    if (error) throw new Error(error.message)
+    if (error) throw new BadRequestError(`No pude guardar la tarea: ${error.message}`)
     return data as Task
   }
 
   async updateTask(id: string, patch: Parameters<TiloApi["updateTask"]>[1], date: string): Promise<Task> {
     const update: Record<string, unknown> = {}
     for (const k of ["title", "notes", "priority", "due_date", "project_id"] as const) if (k in patch) update[k] = patch[k]
+    if ("project" in patch) update.project_id = await this.projectId(patch.project?.trim() || undefined)
     if (patch.status) {
       update.status = patch.status
       update.completed_on = patch.status === "done" ? date : null

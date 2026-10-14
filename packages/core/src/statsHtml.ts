@@ -57,9 +57,9 @@ function kpis(s: MonthStats): string {
       "purple",
     ),
     kpi(
-      "Agua / día",
+      "Agua · promedio",
       fmtLitres(k.water.avg),
-      `${k.water.daysOnTarget}/${s.elapsed.length} días ≥ ${fmtLitres(s.targets.water)}`,
+      `${k.water.daysOnTarget}/${k.water.days} días con registro ≥ ${fmtLitres(s.targets.water)}`,
       "blue",
     ),
     kpi(
@@ -73,7 +73,7 @@ function kpis(s: MonthStats): string {
     kpi("Días activos", String(k.sport.activeDays), `${fmtInt(k.sport.minutes)} min de deporte`, "teal"),
   ]
   if (k.steps) {
-    tiles.push(kpi("Pasos / día", fmtInt(k.steps.avg), `${k.steps.daysOnTarget}/${k.steps.days} días ≥ ${fmtInt(s.targets.steps ?? 10000)}`, "blue"))
+    tiles.push(kpi("Pasos · promedio", fmtInt(k.steps.avg), `${k.steps.daysOnTarget}/${k.steps.days} días con datos ≥ ${fmtInt(s.targets.steps ?? 10000)}`, "blue"))
   }
   if (k.sleep) {
     const mins = Math.round(k.sleep.avg)

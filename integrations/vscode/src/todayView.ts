@@ -27,6 +27,7 @@ export class TodayProvider implements vscode.TreeDataProvider<Node> {
         const item = new vscode.TreeItem(n.label, n.collapsed ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded)
         item.id = `s:${n.id}`
         item.description = n.description
+        item.contextValue = `section-${n.id}`
         if (n.icon) item.iconPath = new vscode.ThemeIcon(n.icon)
         return item
       }
@@ -37,7 +38,8 @@ export class TodayProvider implements vscode.TreeDataProvider<Node> {
         item.id = `t:${t.id}`
         item.checkboxState = done ? vscode.TreeItemCheckboxState.Checked : vscode.TreeItemCheckboxState.Unchecked
         const overdue = !done && t.due_date && t.due_date < this.state.date
-        item.description = [overdue ? `vencida ${t.due_date}` : t.due_date && t.due_date !== this.state.date ? t.due_date : null, t.priority === "high" ? "alta" : null, t.source === "code" ? "código" : t.source === "email" ? "mail" : null]
+        const project = this.state.day?.projects.find((p) => p.id === t.project_id)?.name
+        item.description = [project ?? null, overdue ? `vencida ${t.due_date}` : t.due_date && t.due_date !== this.state.date ? t.due_date : null, t.priority === "high" ? "alta" : null, t.source === "code" ? "código" : t.source === "email" ? "mail" : null]
           .filter(Boolean)
           .join(" · ")
         item.iconPath = new vscode.ThemeIcon(t.priority === "high" ? "arrow-up" : t.priority === "low" ? "arrow-down" : "dash", overdue ? new vscode.ThemeColor("list.errorForeground") : undefined)
@@ -122,7 +124,8 @@ export class TodayProvider implements vscode.TreeDataProvider<Node> {
     switch (n.id) {
       case "tasks": {
         const t = [...v.tasks.dueOrOverdue, ...v.tasks.doneToday]
-        return t.length ? t.map((task) => ({ kind: "task", task })) : [{ kind: "info", id: "no-tasks", label: "Nada pendiente para hoy", icon: "pass" }]
+        const add: Node = { kind: "stat", id: "add-task", label: "Nueva tarea…", description: "proyecto · fecha · prioridad", icon: "add", command: "tilo.addTask" }
+        return t.length ? [...t.map((task) => ({ kind: "task" as const, task })), add] : [{ kind: "info", id: "no-tasks", label: "Nada pendiente para hoy", icon: "pass" }, add]
       }
       case "upcoming":
         return [...v.tasks.upcoming, ...v.tasks.someday].map((task) => ({ kind: "task", task }))

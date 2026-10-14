@@ -4,7 +4,7 @@ import { adaptiveCalibration } from "@tilo/core/energy"
 import { supabaseAdmin } from "../supabase/server"
 import { listConnections } from "./connections"
 import { gmailSnapshot, hasFeature, syncGoogleHealth } from "./google"
-import { syncStrava } from "./strava"
+import { ensureStravaWebhook, syncStrava } from "./strava"
 import { ServerTiloApi } from "./tiloServer"
 
 export function localToday(timezone: string, at = new Date()): string {
@@ -15,9 +15,37 @@ function addDays(date: string, n: number) {
   return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
 }
 
+// How long device data may sit before a sync is worth a round trip to the provider
+export const STALE_MS = 10 * 60_000
+
+// Frequent pass (every 15 minutes): device data for every connection that hasn't synced lately.
+// Webhooks (Strava, Google Health) usually get there first; this catches anything they missed.
+export async function runSync(): Promise<Record<string, number>> {
+  const stats = { synced: 0, failed: 0, skipped: 0 }
+  const conns = (await listConnections()).filter((c) => c.provider === "strava" || hasFeature(c.scopes, "health"))
+  const stale = conns.filter((c) => !c.last_sync_at || Date.now() - Date.parse(c.last_sync_at) > STALE_MS)
+  stats.skipped = conns.length - stale.length
+  // A few at a time: each sync is several provider requests
+  for (let i = 0; i < stale.length; i += 5) {
+    const results = await Promise.allSettled(
+      stale.slice(i, i + 5).map((c) => (c.provider === "strava" ? syncStrava(c.user_id, c.external_id, 2) : syncGoogleHealth(c.user_id, c.external_id, 2))),
+    )
+    for (const r of results) {
+      if (r.status === "fulfilled") stats.synced++
+      else {
+        stats.failed++
+        console.error("[sync]", r.reason)
+      }
+    }
+  }
+  return stats
+}
+
 export async function runDaily(): Promise<Record<string, number>> {
   const db = supabaseAdmin()
   const stats = { connections: 0, failed: 0, energyDays: 0, calibrated: 0 }
+
+  await ensureStravaWebhook().then((r) => r === "created" && console.log("[cron] Strava webhook subscribed")).catch((e) => console.error("[cron] Strava webhook:", e))
 
   const { data: profiles } = await db.from("profiles").select("id, timezone")
   const tz = new Map((profiles ?? []).map((p) => [p.id as string, (p.timezone as string) ?? "UTC"]))

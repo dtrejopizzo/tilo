@@ -25,10 +25,11 @@ export async function proxy(request: NextRequest) {
       },
     },
   })
-  const { data } = await supabase.auth.getUser()
+  // Local JWT verification (refreshes the cookie if the token expired); no Auth round trip per page
+  const { data } = await supabase.auth.getClaims()
   const path = request.nextUrl.pathname
   const isPublic = path.startsWith("/login") || path.startsWith("/auth")
-  if (!data.user && !isPublic) {
+  if (!data?.claims && !isPublic) {
     const url = new URL("/login", request.url)
     url.searchParams.set("next", path + request.nextUrl.search)
     return NextResponse.redirect(url)

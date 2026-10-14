@@ -60,7 +60,9 @@ export class TiloState {
     await this.refresh()
   }
 
-  refresh(): Promise<void> {
+  // sync = true also asks the server to pull from Strava / Google Health (throttled server-side)
+  // and reloads if anything came in. The first paint never waits for that.
+  refresh(sync = false): Promise<void> {
     this.loading ??= (async () => {
       try {
         const client = await this.client()
@@ -74,6 +76,7 @@ export class TiloState {
         this.day = await client.getDay(this.date)
         this.view = buildToday(this.day)
         this.error = null
+        if (sync) this.syncLater(client)
       } catch (e) {
         this.error = e instanceof TiloApiError && e.status === 401 ? "Token inválido o revocado: reconectá Tilo" : e instanceof Error ? e.message : String(e)
       } finally {
@@ -82,6 +85,19 @@ export class TiloState {
       }
     })()
     return this.loading
+  }
+
+  private syncing = false
+  private syncLater(client: TiloClient) {
+    if (this.syncing) return
+    this.syncing = true
+    client
+      .request<{ synced: number }>("POST", "/sync", { date: localDate() })
+      .then((r) => {
+        if (r.synced) void this.refresh()
+      })
+      .catch(() => {})
+      .finally(() => (this.syncing = false))
   }
 
   // Runs a write, shows errors, refreshes afterwards

@@ -23,6 +23,49 @@ function addDays(date: string, n: number) {
   return new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
 }
 
+type Priority = "low" | "medium" | "high"
+
+// Steps 2-4 of a new task: project (existing or new), deadline and priority. undefined = cancelled
+async function askTaskDetails(title: string, projects: string[], today: string) {
+  const NEW = "$(add) Proyecto nuevo…"
+  const NONE = "Sin proyecto"
+  const p = await vscode.window.showQuickPick([NEW, NONE, ...projects], { title: `${title} · proyecto (2/4)`, placeHolder: "Elegí uno o creá uno nuevo", ignoreFocusOut: true })
+  if (p === undefined) return
+  let project: string | undefined = p === NONE ? undefined : p
+  if (p === NEW) {
+    project = (await vscode.window.showInputBox({ title: `${title} · proyecto nuevo`, placeHolder: "Nombre del proyecto", ignoreFocusOut: true }))?.trim()
+    if (!project) return
+  }
+
+  const wd = new Date(`${today}T12:00:00Z`).getUTCDay()
+  const dates = [
+    { label: "Hoy", date: today },
+    { label: "Mañana", date: addDays(today, 1) },
+    { label: "Este viernes", date: addDays(today, (5 - wd + 7) % 7) },
+    { label: "Próximo lunes", date: addDays(today, ((1 - wd + 7) % 7) || 7) },
+    { label: "En una semana", date: addDays(today, 7) },
+    { label: "Sin fecha", date: undefined },
+    { label: "$(calendar) Elegir fecha…", date: "pick" },
+  ].map((d) => ({ ...d, description: d.date && d.date !== "pick" ? d.date : undefined }))
+  const d = await vscode.window.showQuickPick(dates, { title: `${title} · fecha límite (3/4)`, ignoreFocusOut: true })
+  if (!d) return
+  let due_date = d.date
+  if (due_date === "pick") {
+    due_date = (await vscode.window.showInputBox({
+      title: `${title} · fecha límite`, placeHolder: "AAAA-MM-DD", value: today, ignoreFocusOut: true,
+      validateInput: (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v.trim()) && !Number.isNaN(Date.parse(v.trim())) ? null : "Usá el formato AAAA-MM-DD"),
+    }))?.trim()
+    if (!due_date) return
+  }
+
+  const pr = await vscode.window.showQuickPick(
+    [{ label: "$(arrow-up) Alta", value: "high" as Priority }, { label: "$(dash) Media", value: "medium" as Priority }, { label: "$(arrow-down) Baja", value: "low" as Priority }],
+    { title: `${title} · prioridad (4/4)`, ignoreFocusOut: true },
+  )
+  if (!pr) return
+  return { project, due_date, priority: pr.value }
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const state = new TiloState(context)
   const activity = new ActivityTracker()
@@ -192,8 +235,10 @@ export function activate(context: vscode.ExtensionContext) {
       if (text?.trim()) await logText(text.trim())
     },
     "tilo.addTask": async () => {
-      const text = await vscode.window.showInputBox({ title: "Nueva tarea", placeHolder: "revisar PR mañana !alta #work" })
-      if (text?.trim()) await logText(`tarea: ${text.trim()}`)
+      const title = (await vscode.window.showInputBox({ title: "Nueva tarea (1/4)", placeHolder: "revisar PR de auth", ignoreFocusOut: true }))?.trim()
+      if (!title) return
+      const input = await askTaskDetails(title, (state.day?.projects ?? []).map((p) => p.name), state.date)
+      if (input) await state.act((c) => c.addTask({ title, ...input }), `Tarea agregada: ${title}`)
     },
     "tilo.logWater": () => state.act((c) => c.addWater(glass(), state.date), (r) => `+${glass()} ml · ${litres(r.total)}/${litres(r.target)}`),
     "tilo.logMeal": async () => {
@@ -316,11 +361,12 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.languages.registerCodeActionsProvider({ scheme: "file" }, new TodoActions(), { providedCodeActionKinds: TodoActions.kinds }))
   registerChat(context, state)
 
-  // Refresh periodically, on window focus, on settings and token changes
+  // Refresh periodically, on window focus, on settings and token changes. Each refresh also asks
+  // the server to pull from Strava / Google Health; the server skips it when they synced recently.
   let timer: NodeJS.Timeout | undefined
   const schedule = () => {
     clearInterval(timer)
-    timer = setInterval(() => void state.refresh(), Math.max(1, state.config().get<number>("refreshIntervalMinutes") ?? 5) * 60_000)
+    timer = setInterval(() => void state.refresh(true), Math.max(1, state.config().get<number>("refreshIntervalMinutes") ?? 5) * 60_000)
   }
   schedule()
   let lastFocus = 0
@@ -329,7 +375,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.onDidChangeWindowState((s) => {
       if (s.focused && Date.now() - lastFocus > 60_000) {
         lastFocus = Date.now()
-        void state.refresh()
+        void state.refresh(true)
       }
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
@@ -343,10 +389,7 @@ export function activate(context: vscode.ExtensionContext) {
   )
 
   // First load, then ask the server to sync connected services and reload
-  void state.refresh().then(async () => {
-    const c = await state.client()
-    if (c) void c.request("POST", "/sync", { date: localDate() }).then(() => state.refresh()).catch(() => {})
-  })
+  void state.refresh(true)
   breaks.render()
 }
 

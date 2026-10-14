@@ -16,6 +16,7 @@
     "build:vscode": "npm run build -w integrations/vscode",
     "db:seed-exercises": "tsx scripts/gen-exercise-seed.ts",
     "db:setup-sql": "tsx scripts/build-setup-sql.ts",
+    "health:webhook": "tsx scripts/google-health-webhook.ts",
     "test:db": "vitest run --root supabase",
     "db:migrate-firebase": "tsx scripts/migrate-firestore.ts",
     "demo": "NEXT_PUBLIC_DEMO=true NEXT_PUBLIC_SUPABASE_URL=https://demo.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=demo npm run dev -w apps/web"

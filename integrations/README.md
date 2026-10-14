@@ -90,17 +90,33 @@ curl -X POST https://www.strava.com/api/v3/push_subscriptions \
   -F verify_token=$STRAVA_WEBHOOK_VERIFY_TOKEN
 ```
 
-Desde ahí cada actividad nueva, editada o borrada llega sola. El cron diario y la apertura de la app hacen un backfill de seguridad.
+Desde la versión actual la suscripción **la hace la app sola** (al conectar Strava y en el cron diario), así que el curl es solo para verificar. Cada actividad nueva, editada o borrada llega en segundos. El sync cada 15 minutos (ver DEPLOY.md 6c) y la apertura de la app hacen un backfill de seguridad.
 
 **Garmin**: en Garmin Connect → Configuración → Aplicaciones conectadas → Strava. Garmin no da acceso nuevo a su API (programa pausado), así que Strava es la vía oficial.
 
-### Fitbit / Pixel Watch: Google Health API (beta)
+### Fitbit / Pixel Watch / Health Connect: Google Health API
 
-Se conecta con un click (consentimiento incremental sobre el login de Google) y trae pasos, distancia, energía activa y FC en reposo por día, con `dataPoints:dailyRollUp`. Los nombres de los campos de la respuesta se leen de forma defensiva hasta validarlos contra una cuenta real.
+Se conecta con un click (consentimiento incremental sobre el login de Google) y trae:
+- pasos, distancia, energía activa y FC en reposo por día (`dataPoints:dailyRollUp`);
+- **sesiones de ejercicio** (`exercise`): lo que grabó el reloj y lo que cualquier app escribió en Health Connect (Strava, Garmin Connect, Samsung Health…), con duración, distancia, kcal y FC media. Si la misma sesión también llega por Strava, se fusionan por horario;
+- peso, % grasa, altura y sueño.
+
+**Cómo llega, de más rápido a más lento:**
+1. **Webhook** (DEPLOY.md 6b): Google avisa segundos después de que el teléfono sincroniza y Tilo trae solo los días que cambiaron. La web se actualiza sola (Realtime), VSCode en el próximo refresco (5 min o al volver a la ventana).
+2. **Sync cada 15 minutos** (DEPLOY.md 6c), por si un aviso se perdió.
+3. **Al abrir** la web o VSCode, y mientras están abiertos (cada 10 minutos), si la última sincronización tiene más de 10 minutos.
+
+Lo que no controla Tilo: el teléfono tiene que haber sincronizado con Google (Fitbit / Google Health app abierta o en segundo plano). Si una actividad de Strava no aparece, lo más directo es conectar Strava a Tilo (arriba): es instantáneo y no depende del teléfono.
+
+El token de Google Health se guarda con sus permisos acotados y se reutiliza hasta que vence; cada sync son 4 pedidos de rollups + 5 de sesiones y medidas, en paralelo.
 
 > **Google Fit** no se integra: Google cierra sus APIs a fines de 2026 y no acepta apps nuevas desde mayo de 2024.
 >
-> **Apple Health y Android (Health Connect)** quedan en pausa: no tienen API web y necesitan una app en el teléfono. El endpoint `/api/v1/ingest` (que también acepta el JSON de *Health Auto Export*) sigue disponible para sumarlos más adelante.
+> **Android (Health Connect)**: ya entra por Google Health (el teléfono sube Health Connect a Google).
+>
+> **Apple Health** no tiene API web: Apple solo deja salir los datos desde el iPhone. Dos caminos gratis, los dos contra `/api/v1/ingest`:
+> 1. **Atajo de iOS (sin apps).** Settings → VSCode y MCP → Generar token. En Atajos: *Buscar muestras de salud* (Pasos, hoy) → *Obtener estadísticas* (suma) → repetir para Distancia, Energía activa, FC en reposo → *Diccionario* `{source: "apple", device: "Apple Watch", daily: [{date, steps, distance_m, active_kcal, resting_hr}]}` → *Obtener contenido de URL* POST `https://<tu-tilo>/api/v1/ingest`, cabecera `Authorization: Bearer tilo_…`, cuerpo JSON. Automatización → *Hora del día*, varias (por ejemplo 9, 13, 18 y 23 h), *Ejecutar inmediatamente* sin preguntar. iOS no tiene disparador "nuevo dato de salud", por eso el horario.
+> 2. **Health Auto Export** (App Store): Automations → REST API → la misma URL y cabecera; manda su JSON tal cual y Tilo lo entiende. Las automatizaciones son parte de la versión paga de esa app.
 
 ### Formato de `/api/v1/ingest` (para integraciones futuras)
 

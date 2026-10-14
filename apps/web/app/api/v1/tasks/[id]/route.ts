@@ -4,7 +4,7 @@ import { userDb } from "@/lib/server/userDb"
 
 export const runtime = "nodejs"
 
-// PATCH { status?, title?, notes?, priority?, due_date?, project_id?, date }
+// PATCH { status?, title?, notes?, priority?, due_date?, project_id?, project? (name, created if new), date }
 export const PATCH = apiRoute(async ({ uid, req, params }) => {
   const body = await readJson(req)
   const patch: Record<string, unknown> = {}
@@ -14,6 +14,7 @@ export const PATCH = apiRoute(async ({ uid, req, params }) => {
   if ("priority" in body) patch.priority = oneOf(body.priority, ["low", "medium", "high"] as const, "priority")
   if ("due_date" in body) patch.due_date = body.due_date ? parseDate(body.due_date) : null
   if ("project_id" in body) patch.project_id = (body.project_id as string) || null
+  if ("project" in body) patch.project = str(body, "project", { max: 60 }) ?? null
   return new ServerTiloApi(uid).updateTask(params.id, patch, parseDate(body.date, new Date().toISOString().slice(0, 10)))
 })
 

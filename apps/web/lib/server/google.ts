@@ -5,7 +5,7 @@ import { env } from "../env"
 import { supabaseAdmin } from "../supabase/server"
 import { PaymentRequiredError } from "./apiRoute"
 import { triageEmails, type EmailForTriage } from "./ai"
-import { listConnections, loadTokens, makeState, markSynced, saveConnection, saveTokens } from "./connections"
+import { listConnections, loadScopedToken, loadTokens, makeState, markSynced, saveConnection, saveScopedToken, saveTokens } from "./connections"
 import { ingest } from "./ingest"
 
 export type GoogleFeature = "gmail" | "calendar" | "health"
@@ -79,11 +79,24 @@ export async function googleToken(userId: string, sub: string): Promise<string> 
 // The connection holds one refresh token with every scope, so mint a down-scoped access token
 // with only the health scopes. It isn't stored, so the main token keeps Gmail and Calendar.
 export async function googleHealthToken(userId: string, sub: string): Promise<string> {
+  const cached = await loadScopedToken(userId, "google", sub)
+  if (cached) return cached
   const tokens = await loadTokens(userId, "google", sub)
   if (!tokens) throw new Error("Google not connected")
   if (!tokens.refreshToken) throw new Error("invalid_grant: reconnect Google")
   const t = await tokenRequest({ refresh_token: tokens.refreshToken, grant_type: "refresh_token", scope: GOOGLE_SCOPES.health.join(" ") })
+  await saveScopedToken(userId, "google", sub, t.access_token, new Date(Date.now() + t.expires_in * 1000)).catch(() => {})
   return t.access_token
+}
+
+// Google Health's own id for the person: webhook notifications carry it instead of the Google sub
+export async function ensureHealthUserId(userId: string, sub: string, token: string): Promise<string | null> {
+  const { data } = await supabaseAdmin().from("connections").select("health_user_id").eq("user_id", userId).eq("provider", "google").eq("external_id", sub).maybeSingle()
+  if (data?.health_user_id) return data.health_user_id
+  const r = await gget<{ healthUserId?: string }>(token, `${HEALTH_ROOT}/users/me/identity`).catch(() => null)
+  if (!r?.healthUserId) return null
+  await supabaseAdmin().from("connections").update({ health_user_id: r.healthUserId }).eq("user_id", userId).eq("provider", "google").eq("external_id", sub)
+  return r.healthUserId
 }
 
 async function gget<T>(token: string, url: string): Promise<T> {
@@ -240,7 +253,8 @@ export async function calendarEvents(userId: string, date: string, timezone: str
 // Field names inside rollup values are parsed defensively (first numeric leaf) until verified
 // against live responses.
 
-const HEALTH = "https://health.googleapis.com/v4/users/me/dataTypes"
+const HEALTH_ROOT = "https://health.googleapis.com/v4"
+const HEALTH = `${HEALTH_ROOT}/users/me/dataTypes`
 
 function firstNumber(obj: unknown, prefer: RegExp): number | null {
   const found: [string, number][] = []
@@ -361,19 +375,55 @@ async function rollups(token: string, from: string, to: string) {
   const out: Record<string, Awaited<ReturnType<typeof rollup>>> = {}
   const errors: unknown[] = []
   let ok = 0
-  for (const type of ROLLUP_TYPES) {
-    out[type] = []
-    for (const [a, b] of chunks) {
-      try {
-        out[type].push(...(await rollup(token, type, a, b)))
-        ok++
-      } catch (e) {
-        errors.push(e)
+  // Every type and chunk at once (the per-user limit is 300 requests a minute; this is a handful)
+  await Promise.all(
+    ROLLUP_TYPES.map(async (type) => {
+      out[type] = []
+      const results = await Promise.allSettled(chunks.map(([a, b]) => rollup(token, type, a, b)))
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          out[type].push(...r.value)
+          ok++
+        } else errors.push(r.reason)
       }
-    }
-  }
+    }),
+  )
   if (ok === 0 && errors.length) throw errors[0]
   for (const e of errors.slice(0, 3)) console.error("[google health]", e)
+  return out
+}
+
+// Parses a protobuf Duration string ("1234.5s") into whole seconds
+const seconds = (d: unknown) => (typeof d === "string" && /^\d+(\.\d+)?s$/.test(d) ? Math.round(Number(d.slice(0, -1))) : null)
+
+// Exercise sessions (Pixel Watch, Fitbit, and anything an app wrote to Health Connect, e.g. Strava)
+// become activities; sessions also recorded by Strava are merged by time overlap in ingest().
+async function syncGoogleExercise(token: string, from: string, to: string): Promise<NonNullable<IngestPayload["activities"]>> {
+  const points = await listPoints(token, "exercise", `exercise.interval.start_time >= "${from}T00:00:00Z" AND exercise.interval.start_time < "${to}T00:00:00Z"`, 25)
+  const out: NonNullable<IngestPayload["activities"]> = []
+  for (const p of points) {
+    const ex = p.exercise as Record<string, unknown> | undefined
+    const iv = ex?.interval as { startTime?: string; endTime?: string } | undefined
+    if (!iv?.startTime || !iv.endTime) continue
+    const m = (ex?.metricsSummary ?? {}) as Record<string, unknown>
+    const num = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : null)
+    const name = String(p.name ?? "")
+    const id = name.split("/").pop() || `${iv.startTime}`
+    out.push({
+      external_id: id,
+      type: String(ex?.exerciseType ?? "other").toLowerCase().replace(/_/g, " "),
+      name: typeof ex?.displayName === "string" ? ex.displayName : undefined,
+      start_at: iv.startTime,
+      end_at: iv.endTime,
+      duration_s: seconds(ex?.activeDuration) ?? undefined,
+      distance_m: num(m.distanceMillimeters) != null ? num(m.distanceMillimeters)! / 1000 : undefined,
+      kcal: num(m.caloriesKcal) ?? undefined,
+      kcal_is_net: false,
+      avg_hr: num(m.averageHeartRateBeatsPerMinute) ?? undefined,
+      steps: num(m.steps) ?? undefined,
+      elevation_m: num(m.elevationGainMillimeters) != null ? num(m.elevationGainMillimeters)! / 1000 : undefined,
+    })
+  }
   return out
 }
 
@@ -387,7 +437,19 @@ export async function syncGoogleHealth(userId: string, sub: string, days = 3) {
       if (!date || v == null) return
       byDate.set(date, { ...(byDate.get(date) ?? { date }), [key]: v })
     }
-    const r0 = await rollups(token, from, to)
+    // Rollups, sessions and body metrics in parallel; the identity lookup is a one-time extra
+    const [r0, activities, weights] = await Promise.all([
+      rollups(token, from, to),
+      syncGoogleExercise(token, from, to).catch((e) => {
+        console.error("[google health] exercise:", e)
+        return []
+      }),
+      syncGoogleBody(userId, token, from, to, set).catch((e) => {
+        console.error("[google health] body metrics:", e)
+        return []
+      }),
+      ensureHealthUserId(userId, sub, token).catch(() => null),
+    ])
     const [steps, distance, active, resting] = ROLLUP_TYPES.map((t) => r0[t])
     for (const p of steps) set(p.date, "steps", firstNumber(p.value, /count|sum/i))
     for (const p of distance) {
@@ -396,11 +458,7 @@ export async function syncGoogleHealth(userId: string, sub: string, days = 3) {
     }
     for (const p of active) set(p.date, "active_kcal", firstNumber(p.value, /kcal|kilocalories|sum/i))
     for (const p of resting) set(p.date, "resting_hr", firstNumber(p.value, /beatsPerMinute|avg|min/i))
-    const weights = await syncGoogleBody(userId, token, from, to, set).catch((e) => {
-      console.error("[google health] body metrics:", e)
-      return []
-    })
-    const payload: IngestPayload = { source: "google_health", device: "Google Health", daily: [...byDate.values()] as IngestPayload["daily"], weights }
+    const payload: IngestPayload = { source: "google_health", device: "Google Health", daily: [...byDate.values()] as IngestPayload["daily"], activities, weights }
     const r = await ingest(userId, payload)
     await markSynced(userId, "google", sub)
     return r

@@ -30,16 +30,33 @@ function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
   const router = useRouter()
   const params = useSearchParams()
 
-  // Refresh connected services once per visit, then reload today's data
+  // Ask the server to pull from Strava / Google Health: on open, every 10 minutes while the tab is
+  // visible, and when it comes back to the front. The server skips providers that synced recently.
   useEffect(() => {
-    setSyncState("syncing")
-    tilo
-      .request<{ synced: number }>("POST", "/sync", { date: localDate() })
-      .then((r) => {
-        setSyncState("ok")
-        if (r.synced) invalidateDay(localDate())
-      })
-      .catch(() => setSyncState("idle"))
+    let last = 0
+    let busy = false
+    const sync = (minGap: number) => {
+      if (busy || Date.now() - last < minGap || document.visibilityState === "hidden") return
+      busy = true
+      last = Date.now()
+      setSyncState("syncing")
+      tilo
+        .request<{ synced: number }>("POST", "/sync", { date: localDate() })
+        .then((r) => {
+          setSyncState("ok")
+          if (r.synced) invalidateDay(localDate())
+        })
+        .catch(() => setSyncState("idle"))
+        .finally(() => (busy = false))
+    }
+    sync(0)
+    const timer = setInterval(() => sync(10 * 60_000), 60_000)
+    const onVisible = () => document.visibilityState === "visible" && sync(5 * 60_000)
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
   }, [])
 
   useEffect(() => {

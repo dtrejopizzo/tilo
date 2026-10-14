@@ -76,12 +76,35 @@ export async function loadTokens(userId: string, provider: Provider, externalId:
   }
 }
 
+// A second access token on the same connection, minted with fewer scopes (Google Health rejects
+// tokens that also carry Gmail/Calendar). Cached until it expires, so a sync is one round trip less.
+export async function loadScopedToken(userId: string, provider: Provider, externalId: string): Promise<string | null> {
+  const { data } = await supabaseAdmin()
+    .from("connection_secrets")
+    .select("scoped_access_token, scoped_expires_at")
+    .eq("user_id", userId)
+    .eq("provider", provider)
+    .eq("external_id", externalId)
+    .maybeSingle()
+  if (!data?.scoped_access_token || !data.scoped_expires_at || Date.parse(data.scoped_expires_at) < Date.now() + 120_000) return null
+  return decrypt(data.scoped_access_token)
+}
+
+export async function saveScopedToken(userId: string, provider: Provider, externalId: string, token: string, expiresAt: Date) {
+  await supabaseAdmin()
+    .from("connection_secrets")
+    .update({ scoped_access_token: encrypt(token), scoped_expires_at: expiresAt.toISOString() })
+    .eq("user_id", userId)
+    .eq("provider", provider)
+    .eq("external_id", externalId)
+}
+
 export async function listConnections(provider?: Provider, userId?: string) {
-  let q = supabaseAdmin().from("connections").select("user_id, provider, external_id, account_email, scopes, status, last_sync_at").eq("status", "active")
+  let q = supabaseAdmin().from("connections").select("user_id, provider, external_id, account_email, scopes, status, last_sync_at, health_user_id").eq("status", "active")
   if (provider) q = q.eq("provider", provider)
   if (userId) q = q.eq("user_id", userId)
   const { data } = await q
-  return (data ?? []) as { user_id: string; provider: Provider; external_id: string; account_email: string | null; scopes: string[]; status: string; last_sync_at: string | null }[]
+  return (data ?? []) as { user_id: string; provider: Provider; external_id: string; account_email: string | null; scopes: string[]; status: string; last_sync_at: string | null; health_user_id: string | null }[]
 }
 
 export async function markSynced(userId: string, provider: Provider, externalId: string, error?: string) {

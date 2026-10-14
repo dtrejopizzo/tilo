@@ -1,0 +1,23 @@
+# Device sync every 30 minutes, as a safety net behind the Strava / Google Health webhooks.
+# Vercel's cron is daily on the Hobby plan; GitHub's scheduler is free. To turn it on, add two
+# repository secrets (Settings → Secrets and variables → Actions):
+#   TILO_URL      = https://<tu-dominio>   (no trailing slash)
+#   CRON_SECRET   = the same CRON_SECRET as in Vercel
+# Supabase pg_cron does the same job from inside the database (see DEPLOY.md); either is enough.
+name: sync
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: ${{ vars.SYNC_DISABLED != 'true' }}
+    steps:
+      - name: Call /api/cron/sync
+        env:
+          TILO_URL: ${{ secrets.TILO_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$TILO_URL" ] || [ -z "$CRON_SECRET" ]; then echo "TILO_URL / CRON_SECRET secrets not set, skipping"; exit 0; fi
+          curl --fail --silent --show-error --max-time 290 -H "Authorization: Bearer $CRON_SECRET" "$TILO_URL/api/cron/sync"

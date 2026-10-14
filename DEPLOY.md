@@ -65,6 +65,7 @@ En [console.cloud.google.com](https://console.cloud.google.com), creá un proyec
 | `STRAVA_WEBHOOK_VERIFY_TOKEN` | cualquier texto secreto (`openssl rand -hex 12`) |
 | `GEMINI_API_KEY` | tu key de [aistudio.google.com](https://aistudio.google.com/apikey) (con facturación activa: el tier pago no usa tus datos para entrenar) |
 | `CRON_SECRET` | `openssl rand -hex 24` |
+| `GOOGLE_HEALTH_WEBHOOK_SECRET` | `Bearer ` + `openssl rand -hex 24` (Google Health en tiempo real, paso 6b) |
 
    **No** cargues `NEXT_PUBLIC_DEMO` (es solo para la demo local).
 4. **Deploy**. Si usás el dominio `*.vercel.app` que te asigna, volvé a los pasos 2, 3 y 4 y reemplazá `<tu-dominio>` por ese, y actualizá `NEXT_PUBLIC_APP_URL` → **Redeploy**.
@@ -80,7 +81,45 @@ curl -X POST https://www.strava.com/api/v3/push_subscriptions \
   -F verify_token=<STRAVA_WEBHOOK_VERIFY_TOKEN>
 ```
 
-Responde `{"id": …}` si quedó suscripto.
+Responde `{"id": …}` si quedó suscripto. Desde la versión actual **esto lo hace la app sola** (al conectar Strava y cada noche), así que el curl es solo para verificar: `curl "https://www.strava.com/api/v3/push_subscriptions?client_id=…&client_secret=…"` tiene que listar tu dominio.
+
+## 6b. Google Health en tiempo real (una vez)
+
+Sin esto, los datos de Fitbit / Pixel Watch / Health Connect llegan en el sync cada 15 minutos. Con esto, Google avisa a Tilo segundos después de que el teléfono sincroniza.
+
+1. En Google Cloud → tu proyecto "Tilo" → **IAM**: a tu usuario dale el rol **Google Health API Admin** (o usá una cuenta de servicio con ese rol).
+2. Anotá el **número de proyecto** (Project number, no el ID) de la pantalla principal de Cloud Console.
+3. Con la app ya deployada y `GOOGLE_HEALTH_WEBHOOK_SECRET` cargado en Vercel:
+
+```sh
+gcloud auth login
+GOOGLE_PROJECT_NUMBER=<número> GOOGLE_ACCESS_TOKEN="$(gcloud auth print-access-token)" npm run health:webhook
+```
+
+Google verifica el endpoint en el momento (manda una llamada con el secreto y otra sin) y queda suscripto para **todos** los usuarios que conectaron Google Health, también los futuros. Si cambiás de dominio, corré el comando de nuevo.
+
+## 6c. Sync cada 15 minutos (una vez)
+
+El cron de Vercel corre una vez por día en el plan Hobby. Para que los datos no dependan de abrir la app, elegí **una** de estas dos opciones gratis:
+
+**Opción A: Supabase (recomendada, no necesita nada más).** SQL Editor → New query:
+
+```sql
+create extension if not exists pg_cron;
+create extension if not exists pg_net;
+select vault.create_secret('<CRON_SECRET>', 'tilo_cron_secret');
+select cron.schedule('tilo-sync', '*/15 * * * *', $$
+  select net.http_get(
+    url := 'https://<tu-dominio>/api/cron/sync',
+    headers := jsonb_build_object('Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'tilo_cron_secret')),
+    timeout_milliseconds := 290000
+  );
+$$);
+```
+
+Se controla con `select * from cron.job;` y los resultados en `select * from cron.job_run_details order by start_time desc limit 10;`. Para frenarlo: `select cron.unschedule('tilo-sync');`.
+
+**Opción B: GitHub Actions.** El repo trae `.github/workflows/sync.yml` (cada 30 minutos). Solo cargá en GitHub → Settings → Secrets and variables → Actions los secretos `TILO_URL` (`https://<tu-dominio>`) y `CRON_SECRET`.
 
 ## 7. Primer uso
 

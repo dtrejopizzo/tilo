@@ -64,7 +64,7 @@ export interface TiloApi {
   getRange(from: string, to: string): Promise<RangeData>
   quickAdd(text: string, date?: string): Promise<QuickAddResponse>
   addTask(input: { title: string; due_date?: string; priority?: Priority; project?: string; notes?: string; source?: Task["source"]; source_ref?: Record<string, unknown> }): Promise<Task>
-  updateTask(id: string, patch: Partial<Pick<Task, "title" | "notes" | "priority" | "due_date" | "status" | "project_id">>, date?: string): Promise<Task>
+  updateTask(id: string, patch: Partial<Pick<Task, "title" | "notes" | "priority" | "due_date" | "status" | "project_id">> & { project?: string | null }, date?: string): Promise<Task>
   setHabit(id: string, done: boolean, date?: string): Promise<{ ok: true }>
   setSupplement(id: string, taken: boolean, date?: string): Promise<{ ok: true }>
   addWater(ml: number, date?: string): Promise<{ total: number; target: number }>

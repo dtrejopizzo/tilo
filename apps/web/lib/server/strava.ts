@@ -41,8 +41,11 @@ export async function connectStrava(userId: string, code: string) {
     { displayName: [t.athlete?.firstname, t.athlete?.lastname].filter(Boolean).join(" ") || null, scopes: ["activity:read_all"] },
     { accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt: new Date(t.expires_at * 1000) },
   )
-  // First import: the last 30 days
-  await syncStrava(userId, athleteId, 30).catch((e) => console.error("[strava] first sync failed:", e))
+  // First import: the last 30 days, and make sure new activities will be pushed to us
+  await Promise.all([
+    syncStrava(userId, athleteId, 30).catch((e) => console.error("[strava] first sync failed:", e)),
+    ensureStravaWebhook().catch((e) => console.error("[strava] webhook:", e)),
+  ])
   return athleteId
 }
 
@@ -117,6 +120,33 @@ export async function syncStrava(userId: string, athleteId: string, days = 3) {
     await markSynced(userId, "strava", athleteId, String(error))
     throw error
   }
+}
+
+// Strava allows one webhook subscription per app. Make sure ours exists and points at this
+// deployment, so activities arrive seconds after they're uploaded without anyone running curl.
+export async function ensureStravaWebhook(): Promise<"ok" | "created" | "skipped"> {
+  let clientId: string, secret: string, verify: string
+  try {
+    clientId = env.stravaClientId()
+    secret = env.stravaClientSecret()
+    verify = env.stravaVerifyToken()
+  } catch {
+    return "skipped"
+  }
+  const callback = `${env.appUrl()}/api/webhooks/strava`
+  if (!callback.startsWith("https://")) return "skipped" // Strava must be able to reach it
+  const creds = `client_id=${clientId}&client_secret=${secret}`
+  const list = await (await fetch(`${API}/push_subscriptions?${creds}`)).json().catch(() => [])
+  const subs = (Array.isArray(list) ? list : []) as { id: number; callback_url: string }[]
+  if (subs.some((s) => s.callback_url === callback)) return "ok"
+  for (const s of subs) await fetch(`${API}/push_subscriptions/${s.id}?${creds}`, { method: "DELETE" }).catch(() => {})
+  const res = await fetch(`${API}/push_subscriptions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: clientId, client_secret: secret, callback_url: callback, verify_token: verify }),
+  })
+  if (!res.ok) throw new Error(`Strava webhook subscription failed: ${res.status} ${(await res.text()).slice(0, 200)}`)
+  return "created"
 }
 
 // Webhook event: https://developers.strava.com/docs/webhooks/

@@ -15,12 +15,14 @@ export async function requireUser(
     if (!allowApiToken) return unauthorized()
     return (await verifyApiToken(bearer)) ?? unauthorized()
   }
+  // getClaims verifies the JWT signature locally (JWKS cached per instance) instead of asking
+  // Supabase Auth on every call; it only falls back to the network for legacy HS256 projects
   if (bearer) {
-    const { data } = await supabaseAdmin().auth.getUser(bearer)
-    return data.user?.id ?? unauthorized()
+    const { data } = await supabaseAdmin().auth.getClaims(bearer)
+    return data?.claims.sub ?? unauthorized()
   }
-  const { data } = await (await supabaseServer()).auth.getUser()
-  return data.user?.id ?? unauthorized()
+  const { data } = await (await supabaseServer()).auth.getClaims()
+  return data?.claims.sub ?? unauthorized()
 }
 
 export function unauthorized() {

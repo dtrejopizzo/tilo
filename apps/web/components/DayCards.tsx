@@ -87,14 +87,41 @@ export function Kpis({ view, date, mutate, day }: CardProps) {
   )
 }
 
+const ddmm = (d: string) => d.slice(5).split("-").reverse().join("/")
+
 // ---------- Agenda (calendar + tasks) ----------
 
 interface CalEvent { id: string; title: string; start: string; end: string; allDay: boolean; meetLink: string | null }
+
+type Priority = Task["priority"]
+
+// Project (pick an existing one or type a new name), deadline and priority, shared by the new-task and edit forms
+function TaskFields({ id, projects, project, setProject, due, setDue, priority, setPriority }: {
+  id: string; projects: DayData["projects"]; project: string; setProject: (v: string) => void
+  due: string; setDue: (v: string) => void; priority: Priority; setPriority: (v: Priority) => void
+}) {
+  return (
+    <>
+      <input className="input" list={`projects-${id}`} value={project} onChange={(e) => setProject(e.target.value)} placeholder="Proyecto" aria-label="Proyecto (elegí uno o escribí uno nuevo)" />
+      <datalist id={`projects-${id}`}>{projects.map((p) => <option key={p.id} value={p.name} />)}</datalist>
+      <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Fecha límite" />
+      <select className="input" value={priority} onChange={(e) => setPriority(e.target.value as Priority)} aria-label="Prioridad">
+        <option value="high">Alta</option>
+        <option value="medium">Media</option>
+        <option value="low">Baja</option>
+      </select>
+    </>
+  )
+}
+
+const taskGrid = { gridTemplateColumns: "minmax(0,1fr) 130px 140px 90px auto auto" }
 
 function TaskRow({ t, date, mutate, projects }: { t: Task; date: string; mutate: Mutate; projects: DayData["projects"] }) {
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(t.title)
   const [due, setDue] = useState(t.due_date ?? "")
+  const [projectName, setProjectName] = useState(projects.find((p) => p.id === t.project_id)?.name ?? "")
+  const [priority, setPriority] = useState<Priority>(t.priority)
   const done = t.status === "done"
   const overdue = !done && t.due_date && t.due_date < date
   const project = projects.find((p) => p.id === t.project_id)
@@ -102,18 +129,18 @@ function TaskRow({ t, date, mutate, projects }: { t: Task; date: string; mutate:
     return (
       <form
         className="edit"
-        style={{ gridTemplateColumns: "minmax(0,1fr) 150px auto auto" }}
+        style={taskGrid}
         onSubmit={(e) => {
           e.preventDefault()
           setEditing(false)
           void mutate(
-            (d) => ({ ...d, tasks: d.tasks.map((x) => (x.id === t.id ? { ...x, title, due_date: due || null } : x)) }),
-            () => tilo.updateTask(t.id, { title, due_date: due || null }, date),
+            (d) => ({ ...d, tasks: d.tasks.map((x) => (x.id === t.id ? { ...x, title, due_date: due || null, priority } : x)) }),
+            () => tilo.updateTask(t.id, { title, due_date: due || null, priority, project: projectName.trim() || null }, date),
           )
         }}
       >
         <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Título" autoFocus />
-        <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Fecha" />
+        <TaskFields id={t.id} projects={projects} project={projectName} setProject={setProjectName} due={due} setDue={setDue} priority={priority} setPriority={setPriority} />
         <button className="btn leaf sm">Listo</button>
         <button
           type="button"
@@ -140,20 +167,37 @@ function TaskRow({ t, date, mutate, projects }: { t: Task; date: string; mutate:
       />
       <button className="t" onClick={() => setEditing(true)}>{t.title}</button>
       {t.priority === "high" && !done && <span className="pill red">alta</span>}
-      {overdue ? <span className="pill red">vencida · {t.due_date!.slice(5).split("-").reverse().join("/")}</span> : project && <span className="d">{project.name}</span>}
+      {t.priority === "low" && !done && <span className="d">baja</span>}
+      {project && <span className="d">{project.name}</span>}
+      {overdue ? <span className="pill red">vencida · {ddmm(t.due_date!)}</span> : t.due_date && t.due_date !== date && !done && <span className="d">{ddmm(t.due_date)}</span>}
       {t.source === "code" && <span className="pill auto">código</span>}
       {t.source === "email" && <span className="pill auto">mail</span>}
     </div>
   )
 }
 
+const calendarCache = new Map<string, { at: number; events: CalEvent[] }>()
+
 export function AgendaCard({ date, day, view, mutate }: CardProps) {
-  const [events, setEvents] = useState<CalEvent[]>([])
+  const [events, setEvents] = useState<CalEvent[]>(() => calendarCache.get(date)?.events ?? [])
   const [adding, setAdding] = useState("")
+  const [newProject, setNewProject] = useState("")
+  const [newDue, setNewDue] = useState(date)
+  const [newPriority, setNewPriority] = useState<Priority>("medium")
+  useEffect(() => setNewDue(date), [date])
   const [showUpcoming, setShowUpcoming] = useState(false)
   useEffect(() => {
     let alive = true
-    tilo.request<{ events: CalEvent[] }>("GET", `/calendar?date=${date}`).then((r) => alive && setEvents(r.events)).catch(() => {})
+    const hit = calendarCache.get(date)
+    setEvents(hit?.events ?? [])
+    if (hit && Date.now() - hit.at < 2 * 60_000) return
+    tilo
+      .request<{ events: CalEvent[] }>("GET", `/calendar?date=${date}`)
+      .then((r) => {
+        calendarCache.set(date, { at: Date.now(), events: r.events })
+        if (alive) setEvents(r.events)
+      })
+      .catch(() => {})
     return () => {
       alive = false
     }
@@ -172,18 +216,27 @@ export function AgendaCard({ date, day, view, mutate }: CardProps) {
       {tasks.map((t) => <TaskRow key={t.id} t={t} date={date} mutate={mutate} projects={day.projects} />)}
       {!tasks.length && !events.length && <div className="empty">Nada para hoy. Agregá tareas con la barra de arriba o acá.</div>}
       <form
-        className="row"
+        className={adding.trim() ? "edit" : "row"}
+        style={adding.trim() ? taskGrid : undefined}
         onSubmit={(e) => {
           e.preventDefault()
           if (!adding.trim()) return
-          const title = adding.trim()
+          const input = { title: adding.trim(), due_date: newDue || undefined, priority: newPriority, project: newProject.trim() || undefined }
           setAdding("")
-          void mutate(null, () => tilo.addTask({ title, due_date: date }), "Tarea agregada")
+          setNewPriority("medium")
+          setNewDue(date)
+          void mutate(null, () => tilo.addTask(input), "Tarea agregada")
         }}
       >
-        <Plus size={16} color="var(--faint)" aria-hidden="true" />
+        {!adding.trim() && <Plus size={16} color="var(--faint)" aria-hidden="true" />}
         <label htmlFor={`new-task-${date}`} className="sr-only">Nueva tarea</label>
-        <input id={`new-task-${date}`} className="input" style={{ border: 0, padding: "2px 0", background: "none" }} placeholder="Nueva tarea para este día" value={adding} onChange={(e) => setAdding(e.target.value)} />
+        <input id={`new-task-${date}`} className="input" style={adding.trim() ? undefined : { border: 0, padding: "2px 0", background: "none" }} placeholder="Nueva tarea" value={adding} onChange={(e) => setAdding(e.target.value)} />
+        {adding.trim() && (
+          <>
+            <TaskFields id={`new-${date}`} projects={day.projects} project={newProject} setProject={setNewProject} due={newDue} setDue={setNewDue} priority={newPriority} setPriority={setNewPriority} />
+            <button className="btn leaf sm">Agregar</button>
+          </>
+        )}
       </form>
       {view.tasks.upcoming.length + view.tasks.someday.length > 0 && (
         <>
