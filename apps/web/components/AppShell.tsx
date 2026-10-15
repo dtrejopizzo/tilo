@@ -70,9 +70,23 @@ function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
     }
   }, [])
 
+  // ?settings=<section> opens the drawer (e.g. coming back from an OAuth connect); react to the
+  // parameter itself, not to every render, or closing would reopen it at once
+  const settingsParam = params.get("settings")
   useEffect(() => {
-    const s = params.get("settings")
-    if (s) setSettings(s)
+    if (settingsParam) setSettings(settingsParam)
+  }, [settingsParam])
+  const closeSettings = () => {
+    setSettings(null)
+    if (settingsParam) {
+      const q = new URLSearchParams(params.toString())
+      q.delete("settings")
+      q.delete("connected")
+      q.delete("connect_error")
+      router.replace(q.size ? `${pathname}?${q}` : pathname, { scroll: false })
+    }
+  }
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return
@@ -82,7 +96,7 @@ function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [params, date, setDate])
+  }, [date, setDate])
 
   // The local date can differ between the server (UTC) and the browser: label it after mount
   const [mounted, setMounted] = useState(false)
@@ -132,7 +146,7 @@ function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
           </div>
         )}
       </div>
-      {settings && <SettingsDrawer initial={settings} onClose={() => setSettings(null)} />}
+      {settings && <SettingsDrawer initial={settings} onClose={closeSettings} />}
     </header>
   )
 }
