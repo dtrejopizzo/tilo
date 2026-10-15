@@ -193,6 +193,21 @@ export interface EmailForTriage {
   date: string
 }
 
+// The person answered a mail. Did they promise something more ("te mando el doc mañana",
+// "lo reviso y te contesto")? Then that promise is the next task.
+export async function replyFollowUp(userId: string, reply: { to: string; subject: string; body: string; date: string }, today: string) {
+  const r = await generateJson<{ follow_up: boolean; title?: string; due_date?: string | null }>(
+    userId,
+    "email",
+    `You read a reply the user just sent. Decide if, in it, the user committed to a further action: send something later, answer properly later, review a document, schedule a call, pay, deliver, check with someone. Acknowledgements ("gracias", "recibido") and complete answers are not commitments.
+If there is one, write the task the user now owes, in the language of the reply, starting with a verb and naming the person, e.g. "Enviar a Candice el informe actualizado" or "Responder en detalle a Candice sobre el fondo GOED". due_date: the date the user promised (YYYY-MM-DD), or null if none. Today is ${today}.
+Return {"follow_up":boolean,"title":string|null,"due_date":string|null}.`,
+    JSON.stringify({ to: reply.to, subject: reply.subject, sent_at: reply.date, body: reply.body.slice(0, 3000) }),
+  )
+  if (!r.follow_up || !r.title?.trim()) return null
+  return { title: r.title.trim().slice(0, 300), due_date: r.due_date && /^\d{4}-\d{2}-\d{2}$/.test(r.due_date) ? r.due_date : null }
+}
+
 export async function triageEmails(userId: string, emails: EmailForTriage[], today: string) {
   if (!emails.length) return []
   const r = await generateJson<{ results: { id: string; category: "reply" | "deadline" | "fyi" | "none"; due_date?: string | null }[] }>(

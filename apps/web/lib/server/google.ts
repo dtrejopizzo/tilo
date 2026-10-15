@@ -4,7 +4,7 @@ import type { IngestPayload } from "@tilo/core/apiTypes"
 import { env } from "../env"
 import { supabaseAdmin } from "../supabase/server"
 import { PaymentRequiredError } from "./apiRoute"
-import { triageEmails, type EmailForTriage } from "./ai"
+import { replyFollowUp, triageEmails, type EmailForTriage } from "./ai"
 import { listConnections, loadScopedToken, loadTokens, makeState, markSynced, saveConnection, saveScopedToken, saveTokens } from "./connections"
 import { ingest } from "./ingest"
 import { ServerTiloApi } from "./tiloServer"
@@ -235,7 +235,8 @@ async function triageInbox(userId: string, token: string, accountEmail: string, 
           due_date: dueDate ?? (r.category === "reply" ? today : undefined),
           priority: soon ? "high" : "medium",
           source: "email",
-          source_ref: { message_id: e.id, thread_id: m.threadId ?? null, account: accountEmail, from },
+          // since: only a reply sent after this mail closes the task
+          source_ref: { message_id: e.id, thread_id: m.threadId ?? null, account: accountEmail, from, since: Number(m.internalDate ?? Date.now()) },
         })
         .catch((err) => {
           console.error("[gmail] task from mail:", err)
@@ -255,23 +256,73 @@ async function triageInbox(userId: string, token: string, accountEmail: string, 
   return created
 }
 
-// Open tasks that came from a mail: if the person already answered in that thread, close them.
+// The text the person wrote in a sent message, without the quoted thread below it
+function replyText(payload: GmailPart | undefined): string {
+  const find = (p: GmailPart | undefined): string | null => {
+    if (!p) return null
+    if (p.mimeType === "text/plain" && p.body?.data) return Buffer.from(p.body.data, "base64url").toString("utf8")
+    for (const c of p.parts ?? []) {
+      const t = find(c)
+      if (t) return t
+    }
+    return null
+  }
+  let text = find(payload)
+  if (!text) {
+    const html = (function h(p: GmailPart | undefined): string | null {
+      if (!p) return null
+      if (p.mimeType === "text/html" && p.body?.data) return Buffer.from(p.body.data, "base64url").toString("utf8")
+      for (const c of p.parts ?? []) { const t = h(c); if (t) return t }
+      return null
+    })(payload)
+    text = html ? html.replace(/<blockquote[\s\S]*$/i, "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ") : ""
+  }
+  // Cut at the quoted history: "El jue, 15 oct … escribió:", "On … wrote:", "-----Original Message-----", "> …"
+  const cut = text.search(/\n(El .{5,120}escribi[óo]:|On .{5,160}wrote:|-{3,}\s*(Original Message|Mensaje original)|From: .+\n)|\n>/i)
+  return (cut > 0 ? text.slice(0, cut) : text).replace(/\s+\n/g, "\n").trim()
+}
+
+interface GmailPart { mimeType?: string; body?: { data?: string }; parts?: GmailPart[]; headers?: { name: string; value: string }[] }
+
+// Open tasks that came from a mail: if the person answered after that mail, close them. If the
+// answer promises more ("te lo mando mañana"), that promise becomes the next task on the thread.
 async function closeAnsweredMailTasks(userId: string, token: string, accountEmail: string, today: string) {
   const db = supabaseAdmin()
-  const { data: open } = await db.from("tasks").select("id, source_ref").eq("user_id", userId).eq("source", "email").eq("status", "todo")
+  const { data: open } = await db.from("tasks").select("id, title, project_id, source_ref").eq("user_id", userId).eq("source", "email").eq("status", "todo")
   const mine = (open ?? []).filter((t) => {
     const ref = t.source_ref as { account?: string; thread_id?: string } | null
     return ref?.thread_id && (!ref.account || ref.account === accountEmail)
   })
   let closed = 0
   for (const t of mine) {
-    const ref = t.source_ref as { thread_id: string }
+    const ref = t.source_ref as { thread_id: string; since?: number; from?: string; account?: string }
     const thread = await gget<{ messages?: { id: string; labelIds?: string[]; internalDate?: string }[] }>(token, `${GMAIL}/threads/${ref.thread_id}?format=minimal`).catch(() => null)
-    const sent = (thread?.messages ?? []).find((m) => (m.labelIds ?? []).includes("SENT"))
+    const sent = (thread?.messages ?? []).filter((m) => (m.labelIds ?? []).includes("SENT") && Number(m.internalDate ?? 0) > (ref.since ?? 0)).at(-1)
     if (!sent) continue
     await db.from("tasks").update({ status: "done", completed_on: today }).eq("id", t.id).eq("user_id", userId)
     await db.from("email_insights").update({ replied_at: new Date(Number(sent.internalDate ?? Date.now())).toISOString(), dismissed: true }).eq("user_id", userId).eq("task_id", t.id)
     closed++
+
+    // Read what the person wrote and look for a promise
+    try {
+      const full = await gget<{ payload?: GmailPart; internalDate?: string }>(token, `${GMAIL}/messages/${sent.id}?format=full`)
+      const body = replyText(full.payload)
+      if (body.length < 3) continue
+      const hdr = (n: string) => full.payload?.headers?.find((h) => h.name.toLowerCase() === n)?.value ?? ""
+      const follow = await replyFollowUp(userId, { to: hdr("to"), subject: hdr("subject"), body, date: new Date(Number(full.internalDate ?? Date.now())).toISOString() }, today)
+      if (!follow) continue
+      await new ServerTiloApi(userId).addTask({
+        title: follow.title,
+        due_date: follow.due_date ?? today,
+        priority: "medium",
+        project: undefined,
+        source: "email",
+        // Same thread; only a reply sent after this one closes it
+        source_ref: { thread_id: ref.thread_id, account: ref.account ?? accountEmail, from: ref.from, since: Number(sent.internalDate ?? Date.now()), follow_up_of: t.id },
+      })
+    } catch (e) {
+      if (!(e instanceof PaymentRequiredError)) console.error("[gmail] follow-up:", e)
+    }
   }
   return closed
 }
