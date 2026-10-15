@@ -363,7 +363,7 @@ function ConnectionsSection() {
   const back = encodeURIComponent("/?settings=connections")
   const has = (scope: string) => data?.connections.some((c) => c.provider === "google" && c.scopes.some((s) => s.includes(scope)))
   return (
-    <Section id="connections" title="Conexiones" desc="De dónde llegan tus datos. Si dos fuentes miden lo mismo, usamos la del reloj.">
+    <Section id="connections" title="Conexiones" desc="De dónde llegan tus datos. Podés conectar varias cuentas de Google: la agenda y los mails de todas se juntan en Hoy. Si dos fuentes miden lo mismo, usamos la del reloj.">
       <div><Link className="btn leaf" href="/connect">Asistente: conectá tus dispositivos</Link></div>
       <div className="list-edit">
         {data?.connections.map((c) => (
@@ -396,6 +396,7 @@ function ConnectionsSection() {
       <div className="chips">
         <a className="btn ghost sm" href={`/api/connect/strava?return=${back}`}>Conectar Strava (y Garmin vía Strava)</a>
         {!has("gmail") && <a className="btn ghost sm" href={`/api/connect/google?features=gmail,calendar&return=${back}`}>Conectar Gmail y Calendar</a>}
+        {has("gmail") && <a className="btn ghost sm" href={`/api/connect/google?features=gmail,calendar&account=new&return=${back}`}>Agregar otra cuenta de Google (agenda y mails)</a>}
         {!has("googlehealth") && <a className="btn ghost sm" href={`/api/connect/google?features=health&return=${back}`}>Conectar Fitbit / Pixel Watch</a>}
       </div>
     </Section>

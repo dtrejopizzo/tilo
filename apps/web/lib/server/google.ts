@@ -7,6 +7,7 @@ import { PaymentRequiredError } from "./apiRoute"
 import { triageEmails, type EmailForTriage } from "./ai"
 import { listConnections, loadScopedToken, loadTokens, makeState, markSynced, saveConnection, saveScopedToken, saveTokens } from "./connections"
 import { ingest } from "./ingest"
+import { ServerTiloApi } from "./tiloServer"
 
 export type GoogleFeature = "gmail" | "calendar" | "health"
 
@@ -24,6 +25,7 @@ export function hasFeature(scopes: string[], feature: GoogleFeature) {
   return GOOGLE_SCOPES[feature].every((s) => scopes.includes(s))
 }
 
+// email: preselect that Google account. null: show the account chooser (connecting a second account).
 export function googleAuthorizeUrl(userId: string, features: GoogleFeature[], email?: string | null, returnTo = "/"): string {
   const scope = ["openid", "email", "profile", ...features.flatMap((f) => GOOGLE_SCOPES[f])].join(" ")
   const params = new URLSearchParams({
@@ -33,7 +35,7 @@ export function googleAuthorizeUrl(userId: string, features: GoogleFeature[], em
     scope,
     access_type: "offline",
     include_granted_scopes: "true",
-    prompt: "consent",
+    prompt: email ? "consent" : "select_account consent",
     state: makeState(userId, { r: returnTo }),
     ...(email ? { login_hint: email } : {}),
   })
@@ -111,6 +113,7 @@ const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me"
 
 interface GmailMessage {
   id: string
+  threadId?: string
   labelIds?: string[]
   snippet?: string
   internalDate?: string
@@ -181,12 +184,17 @@ export async function gmailSnapshot(userId: string, sub: string, accountEmail: s
     { onConflict: "user_id,date,account_email" },
   )
 
-  // Triage personal inbox mail not seen before
-  const inboxPersonal = personal.filter((m) => (m.labelIds ?? []).includes("INBOX")).slice(0, 25)
-  if (!inboxPersonal.length) return
-  const { data: seen } = await supabaseAdmin().from("email_insights").select("message_id").eq("user_id", userId).in("message_id", inboxPersonal.map((m) => m.id))
+  await triageInbox(userId, token, accountEmail, personal.filter((m) => (m.labelIds ?? []).includes("INBOX")).slice(0, 40), today)
+}
+
+// Mails from people that wait for an answer (or carry a date) become tasks on their own, tagged with
+// the account they came from. Runs on every message not triaged before; idempotent on retries.
+async function triageInbox(userId: string, token: string, accountEmail: string, inboxPersonal: GmailMessage[], today: string) {
+  if (!inboxPersonal.length) return 0
+  const db = supabaseAdmin()
+  const { data: seen } = await db.from("email_insights").select("message_id").eq("user_id", userId).in("message_id", inboxPersonal.map((m) => m.id))
   const fresh = inboxPersonal.filter((m) => !(seen ?? []).some((s) => s.message_id === m.id))
-  if (!fresh.length) return
+  if (!fresh.length) return 0
   const emails: EmailForTriage[] = fresh.map((m) => ({
     id: m.id, from: header(m, "From"), subject: header(m, "Subject"), snippet: m.snippet ?? "",
     date: new Date(Number(m.internalDate ?? Date.now())).toISOString(),
@@ -199,16 +207,72 @@ export async function gmailSnapshot(userId: string, sub: string, accountEmail: s
     // No AI available: questions and replies from people count as "reply"
     results = emails.filter((e) => /^re:|\?/i.test(e.subject)).map((e) => ({ id: e.id, category: "reply" as const }))
   }
-  const rows = results
-    .map((r) => {
-      const e = emails.find((x) => x.id === r.id)
-      return e && {
-        user_id: userId, account_email: accountEmail, message_id: e.id, received_at: e.date, from_name: senderName(e.from),
-        subject: e.subject.slice(0, 300), category: r.category, due_date: r.due_date && /^\d{4}-\d{2}-\d{2}$/.test(r.due_date) ? r.due_date : null,
-      }
-    })
-    .filter(Boolean)
-  if (rows.length) await supabaseAdmin().from("email_insights").upsert(rows as object[], { onConflict: "user_id,message_id", ignoreDuplicates: true })
+  const api = new ServerTiloApi(userId)
+  let created = 0
+  for (const r of results) {
+    const e = emails.find((x) => x.id === r.id)
+    if (!e) continue
+    const m = fresh.find((x) => x.id === e.id)!
+    const dueDate = r.due_date && /^\d{4}-\d{2}-\d{2}$/.test(r.due_date) ? r.due_date : null
+    const from = senderName(e.from)
+    let taskId: string | null = null
+    if (r.category === "reply" || r.category === "deadline") {
+      const soon = dueDate != null && Date.parse(dueDate) - Date.parse(today) <= 3 * 86_400_000
+      const t = await api
+        .addTask({
+          title: (r.category === "reply" ? `Responder a ${from}: ${e.subject}` : e.subject || `Mail de ${from}`).slice(0, 300),
+          due_date: dueDate ?? (r.category === "reply" ? today : undefined),
+          priority: soon ? "high" : "medium",
+          source: "email",
+          source_ref: { message_id: e.id, thread_id: m.threadId ?? null, account: accountEmail, from },
+        })
+        .catch((err) => {
+          console.error("[gmail] task from mail:", err)
+          return null
+        })
+      taskId = t?.id ?? null
+      if (taskId) created++
+    }
+    await db.from("email_insights").upsert(
+      {
+        user_id: userId, account_email: accountEmail, message_id: e.id, thread_id: m.threadId ?? null, received_at: e.date, from_name: from,
+        subject: e.subject.slice(0, 300), category: r.category, due_date: dueDate, task_id: taskId,
+      },
+      { onConflict: "user_id,message_id", ignoreDuplicates: true },
+    )
+  }
+  return created
+}
+
+// Open tasks that came from a mail: if the person already answered in that thread, close them.
+async function closeAnsweredMailTasks(userId: string, token: string, accountEmail: string, today: string) {
+  const db = supabaseAdmin()
+  const { data: open } = await db.from("tasks").select("id, source_ref").eq("user_id", userId).eq("source", "email").eq("status", "todo")
+  const mine = (open ?? []).filter((t) => {
+    const ref = t.source_ref as { account?: string; thread_id?: string } | null
+    return ref?.thread_id && (!ref.account || ref.account === accountEmail)
+  })
+  let closed = 0
+  for (const t of mine) {
+    const ref = t.source_ref as { thread_id: string }
+    const thread = await gget<{ messages?: { id: string; labelIds?: string[]; internalDate?: string }[] }>(token, `${GMAIL}/threads/${ref.thread_id}?format=minimal`).catch(() => null)
+    const sent = (thread?.messages ?? []).find((m) => (m.labelIds ?? []).includes("SENT"))
+    if (!sent) continue
+    await db.from("tasks").update({ status: "done", completed_on: today }).eq("id", t.id).eq("user_id", userId)
+    await db.from("email_insights").update({ replied_at: new Date(Number(sent.internalDate ?? Date.now())).toISOString(), dismissed: true }).eq("user_id", userId).eq("task_id", t.id)
+    closed++
+  }
+  return closed
+}
+
+// The frequent pass (every 15 minutes): new personal mail → tasks, answered threads → done.
+// Much lighter than gmailSnapshot: one list of the last two days plus one request per open mail task.
+export async function gmailInboxCheck(userId: string, sub: string, accountEmail: string, today: string) {
+  const token = await googleToken(userId, sub)
+  const ids = await listIds(token, "in:inbox -in:sent -in:chats newer_than:2d", 60)
+  const inbox = (await metadata(token, ids)).filter((m) => !isNewsletter(m))
+  const [created, closed] = await Promise.all([triageInbox(userId, token, accountEmail, inbox, today), closeAnsweredMailTasks(userId, token, accountEmail, today)])
+  return { created, closed }
 }
 
 // ---------- Calendar ----------

@@ -1,6 +1,6 @@
 import { apiRoute, parseDate, readJson } from "@/lib/server/apiRoute"
 import { listConnections } from "@/lib/server/connections"
-import { gmailSnapshot, hasFeature, syncGoogleHealth } from "@/lib/server/google"
+import { gmailInboxCheck, gmailSnapshot, hasFeature, syncGoogleHealth } from "@/lib/server/google"
 import { STALE_MS } from "@/lib/server/jobs"
 import { syncStrava } from "@/lib/server/strava"
 
@@ -21,8 +21,10 @@ export const POST = apiRoute(async ({ uid, req }) => {
       if (c.provider === "strava") return [syncStrava(uid, c.external_id, backfill || 2)]
       if (c.provider === "google") {
         const jobs: Promise<unknown>[] = []
-        // Gmail is hundreds of requests plus AI triage: half-hourly is plenty
-        if (hasFeature(c.scopes, "gmail") && (backfill || age(c) > 3 * STALE_MS)) jobs.push(gmailSnapshot(uid, c.external_id, c.account_email ?? "", date, date))
+        // New mail → tasks and answered → done on every open; the full inbox snapshot (hundreds of requests) half-hourly
+        if (hasFeature(c.scopes, "gmail")) {
+          jobs.push(backfill || age(c) > 3 * STALE_MS ? gmailSnapshot(uid, c.external_id, c.account_email ?? "", date, date) : gmailInboxCheck(uid, c.external_id, c.account_email ?? "", date))
+        }
         if (hasFeature(c.scopes, "health")) jobs.push(syncGoogleHealth(uid, c.external_id, backfill || 2))
         return jobs
       }

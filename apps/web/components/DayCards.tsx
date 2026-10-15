@@ -91,19 +91,31 @@ const ddmm = (d: string) => d.slice(5).split("-").reverse().join("/")
 
 // ---------- Agenda (calendar + tasks) ----------
 
-interface CalEvent { id: string; title: string; start: string; end: string; allDay: boolean; meetLink: string | null }
+interface CalEvent { id: string; title: string; start: string; end: string; allDay: boolean; meetLink: string | null; account?: string }
 
 type Priority = Task["priority"]
 
-// Project (pick an existing one or type a new name), deadline and priority, shared by the new-task and edit forms
+// Project (pick one, or "Nuevo proyecto…" to type a name that is created and kept), deadline and priority
+const NEW_PROJECT = "__new__"
 function TaskFields({ id, projects, project, setProject, due, setDue, priority, setPriority }: {
   id: string; projects: DayData["projects"]; project: string; setProject: (v: string) => void
   due: string; setDue: (v: string) => void; priority: Priority; setPriority: (v: Priority) => void
 }) {
+  const known = projects.some((p) => p.name === project)
+  const [creating, setCreating] = useState(!!project && !known)
   return (
     <>
-      <input className="input" list={`projects-${id}`} value={project} onChange={(e) => setProject(e.target.value)} placeholder="Proyecto" aria-label="Proyecto (elegí uno o escribí uno nuevo)" />
-      <datalist id={`projects-${id}`}>{projects.map((p) => <option key={p.id} value={p.name} />)}</datalist>
+      {creating ? (
+        <input className="input" value={project} onChange={(e) => setProject(e.target.value)} placeholder="Nombre del proyecto" aria-label="Nuevo proyecto" autoFocus
+          onBlur={() => { if (!project.trim()) setCreating(false) }} />
+      ) : (
+        <select className="input" value={known ? project : ""} aria-label="Proyecto"
+          onChange={(e) => { if (e.target.value === NEW_PROJECT) { setProject(""); setCreating(true) } else setProject(e.target.value) }}>
+          <option value="">Sin proyecto</option>
+          {projects.map((p) => <option key={p.id} value={p.name}>{p.name}</option>)}
+          <option value={NEW_PROJECT}>＋ Nuevo proyecto…</option>
+        </select>
+      )}
       <input className="input" type="date" value={due} onChange={(e) => setDue(e.target.value)} aria-label="Fecha límite" />
       <select className="input" value={priority} onChange={(e) => setPriority(e.target.value as Priority)} aria-label="Prioridad">
         <option value="high">Alta</option>
@@ -171,21 +183,20 @@ function TaskRow({ t, date, mutate, projects }: { t: Task; date: string; mutate:
       {project && <span className="d">{project.name}</span>}
       {overdue ? <span className="pill red">vencida · {ddmm(t.due_date!)}</span> : t.due_date && t.due_date !== date && !done && <span className="d">{ddmm(t.due_date)}</span>}
       {t.source === "code" && <span className="pill auto">código</span>}
-      {t.source === "email" && <span className="pill auto">mail</span>}
+      {t.source === "email" && <span className="pill auto" title={(t.source_ref as { account?: string } | null)?.account ?? "mail"}>mail{accountLabel((t.source_ref as { account?: string } | null)?.account)}</span>}
     </div>
   )
 }
 
+// "· nombre" when the person has more than one Google account connected, so each item says where it came from
+let accountCount = 1
+const accountLabel = (email?: string | null) => (accountCount > 1 && email ? ` · ${email.split("@")[0]}` : "")
+
 const calendarCache = new Map<string, { at: number; events: CalEvent[] }>()
 
-export function AgendaCard({ date, day, view, mutate }: CardProps) {
+// Calendar events of the day, from every connected Google account
+export function AgendaCard({ date }: CardProps) {
   const [events, setEvents] = useState<CalEvent[]>(() => calendarCache.get(date)?.events ?? [])
-  const [adding, setAdding] = useState("")
-  const [newProject, setNewProject] = useState("")
-  const [newDue, setNewDue] = useState(date)
-  const [newPriority, setNewPriority] = useState<Priority>("medium")
-  useEffect(() => setNewDue(date), [date])
-  const [showUpcoming, setShowUpcoming] = useState(false)
   useEffect(() => {
     let alive = true
     const hit = calendarCache.get(date)
@@ -203,18 +214,37 @@ export function AgendaCard({ date, day, view, mutate }: CardProps) {
     }
   }, [date])
   const time = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-  const tasks = [...view.tasks.dueOrOverdue, ...view.tasks.doneToday]
+  const accounts = new Set(events.map((e) => e.account).filter(Boolean))
   return (
-    <Card title="Agenda" meta={`${events.length} ${events.length === 1 ? "reunión" : "reuniones"} · ${view.tasks.dueOrOverdue.length} tareas`}>
+    <Card title="Agenda" meta={`${events.length} ${events.length === 1 ? "reunión" : "reuniones"}`}>
       {events.map((ev) => (
         <div key={ev.id} className="row">
           <span className="time">{ev.allDay ? "todo el día" : time(ev.start)}</span>
           <span className="t event">{ev.title}</span>
+          {accounts.size > 1 && ev.account && <span className="d">{ev.account.split("@")[0]}</span>}
           {ev.meetLink && <a className="d" href={ev.meetLink} target="_blank" rel="noreferrer">Meet</a>}
         </div>
       ))}
+      {!events.length && <div className="empty">Sin reuniones. Conectá más cuentas de Google en Settings → Conexiones para ver todas tus agendas.</div>}
+    </Card>
+  )
+}
+
+// Tasks due today (and done today), with the new-task form: title, project, deadline, priority
+export function TasksCard({ date, day, view, mutate }: CardProps) {
+  const [adding, setAdding] = useState("")
+  const [newProject, setNewProject] = useState("")
+  const [newDue, setNewDue] = useState(date)
+  const [newPriority, setNewPriority] = useState<Priority>("medium")
+  const [showUpcoming, setShowUpcoming] = useState(false)
+  useEffect(() => setNewDue(date), [date])
+  accountCount = new Set(day.tasks.map((t) => (t.source_ref as { account?: string } | null)?.account).filter(Boolean)).size
+  const tasks = [...view.tasks.dueOrOverdue, ...view.tasks.doneToday]
+  const fromMail = view.tasks.dueOrOverdue.filter((t) => t.source === "email").length
+  return (
+    <Card title="Tareas" meta={`${view.tasks.dueOrOverdue.length} pendientes${fromMail ? ` · ${fromMail} de mails` : ""} · ${view.tasks.doneToday.length} hechas`}>
       {tasks.map((t) => <TaskRow key={t.id} t={t} date={date} mutate={mutate} projects={day.projects} />)}
-      {!tasks.length && !events.length && <div className="empty">Nada para hoy. Agregá tareas con la barra de arriba o acá.</div>}
+      {!tasks.length && <div className="empty">Nada pendiente para hoy.</div>}
       <form
         className={adding.trim() ? "edit" : "row"}
         style={adding.trim() ? taskGrid : undefined}
@@ -508,7 +538,7 @@ export function MailCard({ date, day, view, mutate }: CardProps) {
       {m.insights.map((i) => (
         <div key={i.id} className="row">
           <Mail size={15} color="var(--faint)" aria-hidden="true" />
-          <span className="t"><b>{i.from_name}</b> · {i.subject}</span>
+          <span className="t"><b>{i.from_name}</b> · {i.subject}{new Set(m.insights.map((x) => x.account_email)).size > 1 && <span className="d"> · {i.account_email.split("@")[0]}</span>}</span>
           <span className={`pill ${i.category === "deadline" ? "red" : i.category === "reply" ? "leaf" : ""}`}>
             {i.category === "reply" ? "espera respuesta" : i.category === "deadline" ? `fecha${i.due_date ? ` ${i.due_date.slice(5).split("-").reverse().join("/")}` : ""}` : "info"}
           </span>

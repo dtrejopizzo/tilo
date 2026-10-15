@@ -199,10 +199,10 @@ export async function triageEmails(userId: string, emails: EmailForTriage[], tod
     userId,
     "email",
     `You triage a person's inbox. For each email decide:
-- "reply": a real person is waiting for an answer or decision from the user
-- "deadline": there is a date the user must act by (payment, tax, renewal, appointment); set due_date YYYY-MM-DD
+- "reply": a real person is waiting for an answer or decision from the user: clients, students, suppliers, colleagues, friends. This includes a person's message relayed by a platform (LinkedIn InMail or message notification, X/Twitter DM notification, WhatsApp/Slack/Discord digests quoting a specific person's message, marketplace buyer questions). Also a thread the user started where someone answered a question back.
+- "deadline": there is a date the user must act by (payment, tax, renewal, appointment, delivery); set due_date YYYY-MM-DD
 - "fyi": worth knowing but no action
-- "none": automated, promotional or irrelevant
+- "none": automated, promotional, newsletters, notifications nobody wrote (likes, follows, "new login", receipts, calendar invites, shipping updates), out-of-office replies
 Today is ${today}. Return {"results":[{"id":string,"category":string,"due_date":string|null}]}.`,
     JSON.stringify(emails.map((e) => ({ id: e.id, from: e.from, subject: e.subject, snippet: e.snippet.slice(0, 200), date: e.date }))),
   )

@@ -5,7 +5,7 @@ import Link from "next/link"
 import { localDate } from "@/lib/client/api"
 import { useDay } from "@/lib/client/useDay"
 import { useSelectedDate } from "./AppShell"
-import { AgendaCard, ChecklistCard, EnergyCard, Kpis, MailCard, MealsCard, TrainingCard } from "./DayCards"
+import { AgendaCard, ChecklistCard, EnergyCard, Kpis, MailCard, MealsCard, TasksCard, TrainingCard } from "./DayCards"
 import { QuickAdd } from "./QuickAdd"
 
 export function DayGrid({ date }: { date: string }) {
@@ -19,6 +19,7 @@ export function DayGrid({ date }: { date: string }) {
       <div className="cols">
         <div className="col">
           <AgendaCard {...p} />
+          <TasksCard {...p} />
           <ChecklistCard {...p} />
           <MealsCard {...p} />
         </div>

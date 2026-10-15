@@ -2,8 +2,8 @@
 // recalibrate expenditure weekly from intake vs. weight trend.
 import { adaptiveCalibration } from "@tilo/core/energy"
 import { supabaseAdmin } from "../supabase/server"
-import { listConnections } from "./connections"
-import { gmailSnapshot, hasFeature, syncGoogleHealth } from "./google"
+import { listConnections, markSynced } from "./connections"
+import { gmailInboxCheck, gmailSnapshot, hasFeature, syncGoogleHealth } from "./google"
 import { ensureStravaWebhook, syncStrava } from "./strava"
 import { ServerTiloApi } from "./tiloServer"
 
@@ -21,15 +21,32 @@ export const STALE_MS = 10 * 60_000
 // Frequent pass (every 15 minutes): device data for every connection that hasn't synced lately.
 // Webhooks (Strava, Google Health) usually get there first; this catches anything they missed.
 export async function runSync(): Promise<Record<string, number | string>> {
-  const stats: Record<string, number | string> = { synced: 0, failed: 0, skipped: 0, version: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "dev" }
-  const conns = (await listConnections()).filter((c) => c.provider === "strava" || hasFeature(c.scopes, "health"))
+  const stats: Record<string, number | string> = { synced: 0, failed: 0, skipped: 0, mailTasks: 0, mailClosed: 0, version: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "dev" }
+  const { data: profiles } = await supabaseAdmin().from("profiles").select("id, timezone")
+  const tz = new Map((profiles ?? []).map((p) => [p.id as string, (p.timezone as string) ?? "UTC"]))
+  const conns = (await listConnections()).filter((c) => c.provider === "strava" || hasFeature(c.scopes, "health") || hasFeature(c.scopes, "gmail"))
   const stale = conns.filter((c) => !c.last_sync_at || Date.now() - Date.parse(c.last_sync_at) > STALE_MS)
   stats.skipped = conns.length - stale.length
+  const syncOne = async (c: (typeof conns)[number]) => {
+    if (c.provider === "strava") return syncStrava(c.user_id, c.external_id, 2)
+    const jobs: Promise<unknown>[] = []
+    if (hasFeature(c.scopes, "health")) jobs.push(syncGoogleHealth(c.user_id, c.external_id, 2))
+    if (hasFeature(c.scopes, "gmail")) {
+      jobs.push(
+        gmailInboxCheck(c.user_id, c.external_id, c.account_email ?? "", localToday(tz.get(c.user_id) ?? "UTC")).then((r) => {
+          ;(stats.mailTasks as number) += r.created
+          ;(stats.mailClosed as number) += r.closed
+          return markSynced(c.user_id, "google", c.external_id)
+        }),
+      )
+    }
+    const results = await Promise.allSettled(jobs)
+    const failed = results.find((r) => r.status === "rejected")
+    if (failed && failed.status === "rejected") throw failed.reason
+  }
   // A few at a time: each sync is several provider requests
   for (let i = 0; i < stale.length; i += 5) {
-    const results = await Promise.allSettled(
-      stale.slice(i, i + 5).map((c) => (c.provider === "strava" ? syncStrava(c.user_id, c.external_id, 2) : syncGoogleHealth(c.user_id, c.external_id, 2))),
-    )
+    const results = await Promise.allSettled(stale.slice(i, i + 5).map(syncOne))
     for (const r of results) {
       if (r.status === "fulfilled") (stats.synced as number)++
       else {

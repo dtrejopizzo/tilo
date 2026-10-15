@@ -12,6 +12,8 @@ export async function GET(req: NextRequest) {
   const features = (req.nextUrl.searchParams.get("features") ?? "gmail,calendar")
     .split(",")
     .filter((f): f is GoogleFeature => ["gmail", "calendar", "health"].includes(f))
-  const { data } = await supabaseAdmin().from("profiles").select("email").eq("id", uid).single()
+  // ?account=new: let the person pick another Google account instead of the one they signed in with
+  const another = req.nextUrl.searchParams.get("account") === "new"
+  const { data } = another ? { data: null } : await supabaseAdmin().from("profiles").select("email").eq("id", uid).single()
   return NextResponse.redirect(googleAuthorizeUrl(uid, features, data?.email, req.nextUrl.searchParams.get("return") ?? "/"))
 }
