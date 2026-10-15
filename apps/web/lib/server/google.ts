@@ -299,29 +299,33 @@ async function closeAnsweredMailTasks(userId: string, token: string, accountEmai
     const thread = await gget<{ messages?: { id: string; labelIds?: string[]; internalDate?: string }[] }>(token, `${GMAIL}/threads/${ref.thread_id}?format=minimal`).catch(() => null)
     const sent = (thread?.messages ?? []).filter((m) => (m.labelIds ?? []).includes("SENT") && Number(m.internalDate ?? 0) > (ref.since ?? 0)).at(-1)
     if (!sent) continue
-    await db.from("tasks").update({ status: "done", completed_on: today }).eq("id", t.id).eq("user_id", userId)
-    await db.from("email_insights").update({ replied_at: new Date(Number(sent.internalDate ?? Date.now())).toISOString(), dismissed: true }).eq("user_id", userId).eq("task_id", t.id)
-    closed++
 
-    // Read what the person wrote and look for a promise
+    // Read what the person wrote and look for a promise before closing: if the AI is down for a
+    // moment the task stays open and the next pass tries again, so no promise gets lost
+    let follow: Awaited<ReturnType<typeof replyFollowUp>> = null
     try {
       const full = await gget<{ payload?: GmailPart; internalDate?: string }>(token, `${GMAIL}/messages/${sent.id}?format=full`)
       const body = replyText(full.payload)
-      if (body.length < 3) continue
       const hdr = (n: string) => full.payload?.headers?.find((h) => h.name.toLowerCase() === n)?.value ?? ""
-      const follow = await replyFollowUp(userId, { to: hdr("to"), subject: hdr("subject"), body, date: new Date(Number(full.internalDate ?? Date.now())).toISOString() }, today)
-      if (!follow) continue
+      if (body.length >= 3) follow = await replyFollowUp(userId, { to: hdr("to"), subject: hdr("subject"), body, date: new Date(Number(full.internalDate ?? Date.now())).toISOString() }, today)
+    } catch (e) {
+      if (!(e instanceof PaymentRequiredError)) {
+        console.error("[gmail] follow-up, retrying next pass:", e)
+        continue
+      }
+    }
+    await db.from("tasks").update({ status: "done", completed_on: today }).eq("id", t.id).eq("user_id", userId)
+    await db.from("email_insights").update({ replied_at: new Date(Number(sent.internalDate ?? Date.now())).toISOString(), dismissed: true }).eq("user_id", userId).eq("task_id", t.id)
+    closed++
+    if (follow) {
       await new ServerTiloApi(userId).addTask({
         title: follow.title,
         due_date: follow.due_date ?? today,
         priority: "medium",
-        project: undefined,
         source: "email",
         // Same thread; only a reply sent after this one closes it
         source_ref: { thread_id: ref.thread_id, account: ref.account ?? accountEmail, from: ref.from, since: Number(sent.internalDate ?? Date.now()), follow_up_of: t.id },
       })
-    } catch (e) {
-      if (!(e instanceof PaymentRequiredError)) console.error("[gmail] follow-up:", e)
     }
   }
   return closed
