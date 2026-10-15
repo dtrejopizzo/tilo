@@ -29,8 +29,10 @@ export async function runSync(): Promise<Record<string, number | string>> {
   stats.skipped = conns.length - stale.length
   const syncOne = async (c: (typeof conns)[number]) => {
     if (c.provider === "strava") return syncStrava(c.user_id, c.external_id, 2)
+    // Health first, then mail: each writes last_error on failure and a success clears it, so the
+    // mail check goes last and its error is the one that stays visible
     const jobs: Promise<unknown>[] = []
-    if (hasFeature(c.scopes, "health")) jobs.push(syncGoogleHealth(c.user_id, c.external_id, 2))
+    if (hasFeature(c.scopes, "health")) await syncGoogleHealth(c.user_id, c.external_id, 2)
     if (hasFeature(c.scopes, "gmail")) {
       jobs.push(
         gmailInboxCheck(c.user_id, c.external_id, c.account_email ?? "", localToday(tz.get(c.user_id) ?? "UTC")).then(
