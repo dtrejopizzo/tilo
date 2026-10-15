@@ -410,7 +410,7 @@ export function TrainingCard({ date, day, view, mutate }: CardProps) {
 
 const SOURCE_LABEL: Record<string, string> = { apple: "Apple Health", google_health: "Google Health", health_connect: "Health Connect", strava: "Strava", garmin: "Garmin", manual: "manual" }
 
-export function EnergyCard({ view }: CardProps) {
+export function EnergyCard({ view, day }: CardProps) {
   const e = view.energy
   const parts = [
     { cls: "e-bmr", v: e.bmr.kcal, label: "Basal", how: e.bmr.method },
