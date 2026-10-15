@@ -99,6 +99,43 @@ button.chip[aria-pressed="true"] { background: var(--leaf); color: #fff; }
 .qa input { flex: 1; min-width: 0; border: 0; background: none; font-size: 15px; padding: 8px 2px; outline: none; }
 .kbd { font: 11px var(--mono); color: var(--faint); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
 .qa-preview { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 8px 4px; border-top: 1px dashed var(--line); margin-top: 4px; }
+/* in the top bar: a slim field, and the examples / preview drop under it */
+.topbar-qa { flex: 1 1 320px; min-width: 240px; }
+.qa.nav { position: relative; box-shadow: none; padding: 0 4px; border-radius: 9px; background: var(--surface-2); }
+.qa.nav input { font-size: 14px; padding: 6px 2px; }
+.qa.nav .qa-row > svg { width: 16px; height: 16px; }
+.qa-drop { position: absolute; left: -1px; right: -1px; top: calc(100% + 6px); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 8px; z-index: 30; }
+.qa-drop .qa-preview { border-top: 0; margin: 0; padding: 2px 4px; }
+.qa-examples { display: grid; gap: 6px; }
+.qa-group { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.qa-kind { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); width: 110px; flex: none; }
+.qa-hint { font-size: 12px; color: var(--muted); padding: 6px 4px 2px; }
+
+/* ---------- dashboard: three columns, the page never scrolls on desktop ---------- */
+.main.dashboard { max-width: none; padding: 12px 14px; }
+.dash { display: grid; grid-template-columns: minmax(250px, 0.8fr) minmax(300px, 1fr) minmax(380px, 1.35fr); gap: 12px; align-items: start; min-width: 0; }
+.dash .col { display: flex; flex-direction: column; gap: 12px; }
+.dash .col > * { flex: none; } /* cards keep their height; the column scrolls, nothing gets squeezed */
+.dash .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dash .kpi:nth-child(3n) { border-right: 0; }
+.dash .kpi:nth-child(-n+3) { border-bottom: 1px solid var(--line); }
+.dash .kpi .val { font-size: 20px; }
+.dash .edit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.dash .edit .input[type="date"] { grid-column: 1; }
+@media (min-width: 1100px) and (min-height: 600px) {
+  .shell { height: 100vh; min-height: 0; }
+  .main.dashboard { height: 100%; min-height: 0; overflow: hidden; grid-template-rows: auto minmax(0, 1fr); }
+  .dash { height: 100%; min-height: 0; }
+  .dash .col { height: 100%; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 2px; align-content: start; }
+}
+@media (max-width: 1099px) {
+  .dash { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .dash .col.status { grid-column: 1 / -1; }
+  .topbar-qa { flex: 1 1 160px; min-width: 140px; }
+  .datenav b { min-width: 96px; }
+  .topbar .btn.desktop-only { padding: 5px 8px; }
+  .topbar .btn.desktop-only svg + * { display: none; }
+}
 
 /* ---------- KPIs ---------- */
 .kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
@@ -282,6 +319,10 @@ button.kpi:hover { background: var(--surface-2); }
   .inbox-top { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .edit { grid-template-columns: 1fr 1fr; }
   .topbar .sync, .topbar .desktop-only { display: none; }
+  .dash { grid-template-columns: minmax(0, 1fr); }
+  .dash .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dash .kpi:nth-child(3n) { border-right: 1px solid var(--line); }
+  .dash .kpi:nth-child(2n) { border-right: 0; }
   .main { padding-bottom: 120px; }
   .mobile-dock { display: grid; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--line); gap: 8px; }
   .mobile-dock .qa { box-shadow: none; }

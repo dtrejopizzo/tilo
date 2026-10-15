@@ -194,8 +194,7 @@ const accountLabel = (email?: string | null) => (accountCount > 1 && email ? ` �
 
 const calendarCache = new Map<string, { at: number; events: CalEvent[] }>()
 
-// Calendar events of the day, from every connected Google account
-export function AgendaCard({ date }: CardProps) {
+function useCalendar(date: string) {
   const [events, setEvents] = useState<CalEvent[]>(() => calendarCache.get(date)?.events ?? [])
   useEffect(() => {
     let alive = true
@@ -213,19 +212,44 @@ export function AgendaCard({ date }: CardProps) {
       alive = false
     }
   }, [date])
+  return events
+}
+
+const addDaysStr = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
+
+// Calendar events of the day and the next two, from every connected Google account
+export function AgendaCard({ date }: CardProps) {
+  const today = useCalendar(date)
+  const tomorrow = useCalendar(addDaysStr(date, 1))
+  const after = useCalendar(addDaysStr(date, 2))
   const time = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-  const accounts = new Set(events.map((e) => e.account).filter(Boolean))
+  const accounts = new Set([...today, ...tomorrow, ...after].map((e) => e.account).filter(Boolean))
+  const now = Date.now()
+  const list = (events: CalEvent[], dim = false) =>
+    events.map((ev) => (
+      <div key={ev.id} className={`row${!dim && !ev.allDay && Date.parse(ev.end) < now ? " done" : ""}`}>
+        <span className="time">{ev.allDay ? "día" : time(ev.start)}</span>
+        <span className="t event wrap">{ev.title}</span>
+        {accounts.size > 1 && ev.account && <span className="d">{ev.account.split("@")[0]}</span>}
+        {ev.meetLink && !dim && <a className="d" href={ev.meetLink} target="_blank" rel="noreferrer">Meet</a>}
+      </div>
+    ))
+  const dayName = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", timeZone: "UTC" })
   return (
-    <Card title="Agenda" meta={`${events.length} ${events.length === 1 ? "reunión" : "reuniones"}`}>
-      {events.map((ev) => (
-        <div key={ev.id} className="row">
-          <span className="time">{ev.allDay ? "todo el día" : time(ev.start)}</span>
-          <span className="t event">{ev.title}</span>
-          {accounts.size > 1 && ev.account && <span className="d">{ev.account.split("@")[0]}</span>}
-          {ev.meetLink && <a className="d" href={ev.meetLink} target="_blank" rel="noreferrer">Meet</a>}
-        </div>
-      ))}
-      {!events.length && <div className="empty">Sin reuniones. Conectá más cuentas de Google en Settings → Conexiones para ver todas tus agendas.</div>}
+    <Card title="Agenda" meta={`${today.length} ${today.length === 1 ? "reunión" : "reuniones"} hoy`}>
+      {list(today)}
+      {!today.length && <div className="empty">Sin reuniones hoy.</div>}
+      {(tomorrow.length > 0 || after.length > 0) && (
+        <>
+          <div className="slot">{dayName(addDaysStr(date, 1))}</div>
+          {list(tomorrow, true)}
+          {!tomorrow.length && <div className="empty">Libre.</div>}
+          <div className="slot">{dayName(addDaysStr(date, 2))}</div>
+          {list(after, true)}
+          {!after.length && <div className="empty">Libre.</div>}
+        </>
+      )}
+      {accounts.size <= 1 && <div className="empty" style={{ paddingTop: 4 }}>Más agendas: Settings → Conexiones → Agregar otra cuenta de Google.</div>}
     </Card>
   )
 }
@@ -236,15 +260,21 @@ export function TasksCard({ date, day, view, mutate }: CardProps) {
   const [newProject, setNewProject] = useState("")
   const [newDue, setNewDue] = useState(date)
   const [newPriority, setNewPriority] = useState<Priority>("medium")
-  const [showUpcoming, setShowUpcoming] = useState(false)
   useEffect(() => setNewDue(date), [date])
   accountCount = new Set(day.tasks.map((t) => (t.source_ref as { account?: string } | null)?.account).filter(Boolean)).size
-  const tasks = [...view.tasks.dueOrOverdue, ...view.tasks.doneToday]
   const fromMail = view.tasks.dueOrOverdue.filter((t) => t.source === "email").length
+  const overdue = view.tasks.dueOrOverdue.filter((t) => t.due_date && t.due_date < date)
+  const todays = view.tasks.dueOrOverdue.filter((t) => !t.due_date || t.due_date >= date)
+  const group = (label: string, list: Task[]) =>
+    list.length > 0 && (
+      <>
+        <div className="slot">{label} · {list.length}</div>
+        {list.map((t) => <TaskRow key={t.id} t={t} date={date} mutate={mutate} projects={day.projects} />)}
+      </>
+    )
+  const total = view.tasks.dueOrOverdue.length + view.tasks.upcoming.length + view.tasks.someday.length
   return (
-    <Card title="Tareas" meta={`${view.tasks.dueOrOverdue.length} pendientes${fromMail ? ` · ${fromMail} de mails` : ""} · ${view.tasks.doneToday.length} hechas`}>
-      {tasks.map((t) => <TaskRow key={t.id} t={t} date={date} mutate={mutate} projects={day.projects} />)}
-      {!tasks.length && <div className="empty">Nada pendiente para hoy.</div>}
+    <Card title="Tareas" meta={`${total} pendientes${fromMail ? ` · ${fromMail} de mails` : ""} · ${view.tasks.doneToday.length} hechas hoy`}>
       <form
         className={adding.trim() ? "edit" : "row"}
         style={adding.trim() ? taskGrid : undefined}
@@ -268,14 +298,12 @@ export function TasksCard({ date, day, view, mutate }: CardProps) {
           </>
         )}
       </form>
-      {view.tasks.upcoming.length + view.tasks.someday.length > 0 && (
-        <>
-          <button className="row" style={{ width: "100%", border: 0, background: "none", cursor: "pointer", color: "var(--muted)" }} onClick={() => setShowUpcoming(!showUpcoming)}>
-            <span className="t" style={{ textAlign: "left" }}>{showUpcoming ? "Ocultar" : "Ver"} próximas ({view.tasks.upcoming.length + view.tasks.someday.length})</span>
-          </button>
-          {showUpcoming && [...view.tasks.upcoming, ...view.tasks.someday].map((t) => <TaskRow key={t.id} t={t} date={date} mutate={mutate} projects={day.projects} />)}
-        </>
-      )}
+      {group("Vencidas", overdue)}
+      {group("Hoy", todays)}
+      {!overdue.length && !todays.length && <div className="empty">Nada pendiente para hoy.</div>}
+      {group("Próximas", view.tasks.upcoming)}
+      {group("Sin fecha", view.tasks.someday)}
+      {group("Hechas hoy", view.tasks.doneToday)}
     </Card>
   )
 }

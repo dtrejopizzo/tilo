@@ -1,13 +1,14 @@
 "use client"
 
-import { ChevronLeft, ChevronRight, LogOut, Settings as SettingsIcon } from "lucide-react"
+import { ChevronLeft, ChevronRight, Dumbbell, LogOut, Settings as SettingsIcon } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useState, type ReactNode } from "react"
 import { addDays, DEMO, formatDay, localDate, tilo } from "@/lib/client/api"
 import { supabaseBrowser } from "@/lib/supabase/browser"
 import { ToastProvider } from "@/lib/client/toast"
-import { invalidateDay } from "@/lib/client/useDay"
+import { invalidateDay, useDay } from "@/lib/client/useDay"
+import { QuickAdd } from "./QuickAdd"
 import { SettingsDrawer } from "./SettingsDrawer"
 
 // Tilo is named after an Australian Shepherd: the brand mark is a blue merle Aussie
@@ -29,6 +30,16 @@ function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
   const [syncState, setSyncState] = useState<"syncing" | "ok" | "idle">("idle")
   const router = useRouter()
   const params = useSearchParams()
+  // The selected day feeds the quick-add parser (habits, supplements, projects) and the training button
+  const { day, mutate } = useDay(date)
+
+  async function train() {
+    if (!day) return
+    const open = day.workouts.find((w) => !w.ended_at)
+    const w = open ?? (await mutate(null, () => tilo.startWorkout({ routine_id: day.routine?.id, name: day.routine?.name, date })))
+    if (w) router.push(`/workout/${w.id}?date=${date}`)
+  }
+  const openWorkout = day?.workouts.find((w) => !w.ended_at)
 
   // Ask the server to pull from Strava / Google Health: on open, every 10 minutes while the tab is
   // visible, and when it comes back to the front. The server skips providers that synced recently.
@@ -92,7 +103,11 @@ function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
         <Link href="/" className={!isStats ? "on" : ""}>Today</Link>
         <Link href="/stats" className={isStats ? "on" : ""}>Stats</Link>
       </nav>
-      <span className="spacer" />
+      <div className="topbar-qa desktop-only"><QuickAdd date={date} day={day} mode="nav" /></div>
+      <span className="spacer mobile-spacer" />
+      <button className={`btn sm desktop-only ${openWorkout ? "leaf" : "ghost"}`} onClick={train} title={day?.routine ? `Rutina de hoy: ${day.routine.name}` : "Entrenamiento libre"}>
+        <Dumbbell /><span>{openWorkout ? "Continuar entreno" : "Entrenar"}</span>
+      </button>
       <span className="sync"><i className={syncState === "ok" ? "" : "off"} />{syncState === "syncing" ? "sincronizando…" : syncState === "ok" ? "al día" : "sin conexiones"}</span>
       <button className="iconbtn" onClick={() => setSettings("goals")} aria-label="Settings (,)"><SettingsIcon /></button>
       <div style={{ position: "relative" }}>
