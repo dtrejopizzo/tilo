@@ -18,7 +18,7 @@ interface AiCredentials {
 }
 
 const DEFAULT_MODELS: Record<Provider, string> = {
-  gemini: "gemini-2.5-flash",
+  gemini: "gemini-3.8-flash",
   openai: "gpt-4.1-mini",
   anthropic: "claude-haiku-4-5-20251001",
 }
