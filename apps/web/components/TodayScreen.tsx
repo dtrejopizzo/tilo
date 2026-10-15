@@ -17,8 +17,8 @@ export function DayGrid({ date }: { date: string }) {
   // Agenda and tasks side by side (the day's panorama), then energy, habits and meals.
   return (
     <div className="dash">
-      <div className="col agenda"><AgendaCard {...p} /></div>
       <div className="col tasks"><TasksCard {...p} /></div>
+      <div className="col agenda"><AgendaCard {...p} /></div>
       <div className="col status">
         <Kpis {...p} />
         <EnergyCard {...p} />

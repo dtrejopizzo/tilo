@@ -113,7 +113,7 @@ button.chip[aria-pressed="true"] { background: var(--leaf); color: #fff; }
 
 /* ---------- dashboard: three columns, the page never scrolls on desktop ---------- */
 .main.dashboard { max-width: none; padding: 12px 14px; }
-.dash { display: grid; grid-template-columns: minmax(250px, 0.8fr) minmax(300px, 1fr) minmax(380px, 1.35fr); gap: 12px; align-items: start; min-width: 0; }
+.dash { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(250px, 0.8fr) minmax(380px, 1.35fr); gap: 12px; align-items: start; min-width: 0; }
 .dash .col { display: flex; flex-direction: column; gap: 12px; }
 .dash .col > * { flex: none; } /* cards keep their height; the column scrolls, nothing gets squeezed */
 .dash .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }

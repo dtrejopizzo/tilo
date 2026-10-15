@@ -2,7 +2,7 @@
 
 import type { DayData, Meal, Task } from "@tilo/core/apiTypes"
 import type { TodayView } from "@tilo/core/today"
-import { Check, Lightbulb, Mail, Pencil, Plus, Trash2, X } from "lucide-react"
+import { Check, EyeOff, Lightbulb, Mail, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, type ReactNode } from "react"
 import { crud, fmt, litres, tilo } from "@/lib/client/api"
@@ -215,41 +215,51 @@ function useCalendar(date: string) {
   return events
 }
 
-const addDaysStr = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
+const normTitle = (t: string) => t.trim().toLowerCase()
 
-// Calendar events of the day and the next two, from every connected Google account
-export function AgendaCard({ date }: CardProps) {
-  const today = useCalendar(date)
-  const tomorrow = useCalendar(addDaysStr(date, 1))
-  const after = useCalendar(addDaysStr(date, 2))
+// Calendar events of the day, from every connected Google account. Recurring blocks the person
+// doesn't need to see (sleep, training) can be hidden by title; the list lives in settings.
+export function AgendaCard({ date, day, mutate }: CardProps) {
+  const events = useCalendar(date)
+  const hidden: string[] = ((day.settings as { hidden_events?: string[] } | null)?.hidden_events ?? []).map(normTitle)
+  const [showHidden, setShowHidden] = useState(false)
   const time = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-  const accounts = new Set([...today, ...tomorrow, ...after].map((e) => e.account).filter(Boolean))
+  const accounts = new Set(events.map((e) => e.account).filter(Boolean))
   const now = Date.now()
-  const list = (events: CalEvent[], dim = false) =>
-    events.map((ev) => (
-      <div key={ev.id} className={`row${!dim && !ev.allDay && Date.parse(ev.end) < now ? " done" : ""}`}>
-        <span className="time">{ev.allDay ? "día" : time(ev.start)}</span>
-        <span className="t event wrap">{ev.title}</span>
-        {accounts.size > 1 && ev.account && <span className="d">{ev.account.split("@")[0]}</span>}
-        {ev.meetLink && !dim && <a className="d" href={ev.meetLink} target="_blank" rel="noreferrer">Meet</a>}
-      </div>
-    ))
-  const dayName = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", timeZone: "UTC" })
+  const setHidden = (next: string[]) =>
+    mutate(
+      (d) => ({ ...d, settings: { ...(d.settings ?? {}), hidden_events: next } }),
+      () => tilo.request("PATCH", "/settings", { settings: { hidden_events: next } }),
+    )
+  const visible = events.filter((e) => !hidden.includes(normTitle(e.title)))
+  const hiddenToday = events.filter((e) => hidden.includes(normTitle(e.title)))
   return (
-    <Card title="Agenda" meta={`${today.length} ${today.length === 1 ? "reunión" : "reuniones"} hoy`}>
-      {list(today)}
-      {!today.length && <div className="empty">Sin reuniones hoy.</div>}
-      {(tomorrow.length > 0 || after.length > 0) && (
+    <Card title="Agenda" meta={`${visible.length} ${visible.length === 1 ? "reunión" : "reuniones"}`}>
+      {visible.map((ev) => (
+        <div key={ev.id} className={`row${!ev.allDay && Date.parse(ev.end) < now ? " done" : ""}`}>
+          <span className="time">{ev.allDay ? "día" : time(ev.start)}</span>
+          <span className="t event wrap">{ev.title}</span>
+          {accounts.size > 1 && ev.account && <span className="d">{ev.account.split("@")[0]}</span>}
+          {ev.meetLink && <a className="d" href={ev.meetLink} target="_blank" rel="noreferrer">Meet</a>}
+          <span className="actions">
+            <button className="iconbtn" title={`Ocultar "${ev.title}" siempre`} aria-label={`Ocultar ${ev.title} siempre`} onClick={() => setHidden([...new Set([...hidden, normTitle(ev.title)])])}><EyeOff /></button>
+          </span>
+        </div>
+      ))}
+      {!visible.length && <div className="empty">Sin reuniones hoy.</div>}
+      {hidden.length > 0 && (
         <>
-          <div className="slot">{dayName(addDaysStr(date, 1))}</div>
-          {list(tomorrow, true)}
-          {!tomorrow.length && <div className="empty">Libre.</div>}
-          <div className="slot">{dayName(addDaysStr(date, 2))}</div>
-          {list(after, true)}
-          {!after.length && <div className="empty">Libre.</div>}
+          <button className="row" style={{ width: "100%", border: 0, background: "none", cursor: "pointer", color: "var(--muted)" }} onClick={() => setShowHidden(!showHidden)}>
+            <span className="t" style={{ textAlign: "left", fontSize: 12 }}>{hidden.length} {hidden.length === 1 ? "evento oculto" : "eventos ocultos"}{hiddenToday.length ? ` · ${hiddenToday.length} hoy` : ""} {showHidden ? "▾" : "▸"}</span>
+          </button>
+          {showHidden && hidden.map((h) => (
+            <div key={h} className="row" style={{ paddingLeft: 16 }}>
+              <span className="t d" style={{ textTransform: "capitalize" }}>{h}</span>
+              <button className="btn ghost sm" onClick={() => setHidden(hidden.filter((x) => x !== h))}>Mostrar</button>
+            </div>
+          ))}
         </>
       )}
-      {accounts.size <= 1 && <div className="empty" style={{ paddingTop: 4 }}>Más agendas: Settings → Conexiones → Agregar otra cuenta de Google.</div>}
     </Card>
   )
 }
