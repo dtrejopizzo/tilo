@@ -437,9 +437,16 @@ export function EnergyCard({ view }: CardProps) {
           <span key={k} className="chip">{k === "steps" ? "pasos" : "energía activa"}: {SOURCE_LABEL[s!] ?? s}</span>
         ))}
       </div>
-      {e.confidence === "low" && (
-        <div className="reco warn"><Lightbulb aria-hidden="true" /><span>Sin datos de movimiento ni comidas el cálculo es aproximado. Conectá tu reloj o celular y registrá lo que comés para que sea exacto.</span></div>
-      )}
+      {e.confidence === "low" && (() => {
+        const movement = view.metrics.values.steps != null || view.metrics.values.active_kcal != null
+        const meals = day.meals.length > 0
+        const text = !movement && !meals
+          ? "Sin datos de movimiento ni comidas el cálculo es aproximado. Conectá tu reloj o celular y registrá lo que comés para que sea exacto."
+          : !meals
+            ? "Tu movimiento ya llega. Registrá lo que comés (arriba, o con una foto o texto) para que el balance sea exacto."
+            : "Sin datos de movimiento el gasto es una estimación. Conectá tu reloj o celular en Settings → Conexiones."
+        return <div className="reco warn"><Lightbulb aria-hidden="true" /><span>{text}</span></div>
+      })()}
     </Card>
   )
 }
