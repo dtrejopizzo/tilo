@@ -116,16 +116,14 @@ button.chip[aria-pressed="true"] { background: var(--leaf); color: #fff; }
 .dash { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(250px, 0.8fr) minmax(380px, 1.35fr); gap: 12px; align-items: start; min-width: 0; }
 .dash .col { display: flex; flex-direction: column; gap: 12px; }
 .dash .col > * { flex: none; } /* cards keep their height; the column scrolls, nothing gets squeezed */
-.dash .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.dash .kpi:nth-child(3n) { border-right: 0; }
-.dash .kpi:nth-child(-n+3) { border-bottom: 1px solid var(--line); }
-.dash .kpi .val { font-size: 20px; }
+.main.dashboard .kpi .val { font-size: 21px; }
 .dash .edit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 .dash .edit .input[type="date"] { grid-column: 1; }
 @media (min-width: 1100px) and (min-height: 600px) {
   .shell { height: 100vh; min-height: 0; }
-  .main.dashboard { height: 100%; min-height: 0; overflow: hidden; grid-template-rows: auto minmax(0, 1fr); }
-  .dash { height: 100%; min-height: 0; }
+  .main.dashboard { height: 100%; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 12px; }
+  .main.dashboard > * { flex: none; }
+  .main.dashboard > .dash { flex: 1 1 auto; min-height: 0; height: auto; }
   .dash .col { height: 100%; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding-right: 2px; align-content: start; }
 }
 @media (max-width: 1099px) {
@@ -320,9 +318,6 @@ button.kpi:hover { background: var(--surface-2); }
   .edit { grid-template-columns: 1fr 1fr; }
   .topbar .sync, .topbar .desktop-only { display: none; }
   .dash { grid-template-columns: minmax(0, 1fr); }
-  .dash .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dash .kpi:nth-child(3n) { border-right: 1px solid var(--line); }
-  .dash .kpi:nth-child(2n) { border-right: 0; }
   .main { padding-bottom: 120px; }
   .mobile-dock { display: grid; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--surface); border-top: 1px solid var(--line); gap: 8px; }
   .mobile-dock .qa { box-shadow: none; }

@@ -5,7 +5,7 @@ import Link from "next/link"
 import { localDate } from "@/lib/client/api"
 import { useDay } from "@/lib/client/useDay"
 import { useSelectedDate } from "./AppShell"
-import { AgendaCard, ChecklistCard, EnergyCard, Kpis, MealsCard, TasksCard, TrainingCard } from "./DayCards"
+import { AgendaCard, ChecklistCard, EnergyCard, Kpis, MealsCard, TasksCard } from "./DayCards"
 import { QuickAdd } from "./QuickAdd"
 
 export function DayGrid({ date }: { date: string }) {
@@ -15,18 +15,20 @@ export function DayGrid({ date }: { date: string }) {
   const p = { date, day, view, mutate }
   // Desktop: three columns that fill the screen, each scrolls on its own, the page never does.
   // Agenda and tasks side by side (the day's panorama), then energy, habits and meals.
+  // The six KPIs run across the top; training is reached from the nav and its kcal show in Energy.
   return (
-    <div className="dash">
-      <div className="col tasks"><TasksCard {...p} /></div>
-      <div className="col agenda"><AgendaCard {...p} /></div>
-      <div className="col status">
-        <Kpis {...p} />
-        <EnergyCard {...p} />
-        <ChecklistCard {...p} />
-        <MealsCard {...p} />
-        <TrainingCard {...p} />
+    <>
+      <Kpis {...p} />
+      <div className="dash">
+        <div className="col tasks"><TasksCard {...p} /></div>
+        <div className="col agenda"><AgendaCard {...p} /></div>
+        <div className="col status">
+          <EnergyCard {...p} />
+          <ChecklistCard {...p} />
+          <MealsCard {...p} />
+        </div>
       </div>
-    </div>
+    </>
   )
 }
 
