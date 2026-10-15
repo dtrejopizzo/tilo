@@ -425,6 +425,8 @@ async function syncGoogleExercise(token: string, from: string, to: string): Prom
       avg_hr: num(m.averageHeartRateBeatsPerMinute) ?? undefined,
       steps: num(m.steps) ?? undefined,
       elevation_m: num(m.elevationGainMillimeters) != null ? num(m.elevationGainMillimeters)! / 1000 : undefined,
+      // What Google sent, to check field names against real data (no personal data beyond the workout itself)
+      raw: { google: { exerciseType: ex?.exerciseType, metricsSummary: m, keys: Object.keys(ex ?? {}) } },
     })
   }
   if (points.length && !out.length) throw unparsed()

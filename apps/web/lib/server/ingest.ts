@@ -55,7 +55,7 @@ export async function ingest(userId: string, payload: IngestPayload): Promise<In
         distance_m: a.distance_m ?? null, kcal: a.kcal != null ? Math.round(a.kcal * 10) / 10 : null,
         avg_hr: a.avg_hr != null ? Math.round(a.avg_hr) : null, max_hr: a.max_hr != null ? Math.round(a.max_hr) : null,
         steps: a.steps != null ? Math.round(a.steps) : null, elevation_m: a.elevation_m ?? null, device: payload.device ?? null,
-        raw: { kcal_is_net: a.kcal_is_net ?? null, original_type: a.type },
+        raw: { ...(a.raw ?? {}), kcal_is_net: a.kcal_is_net ?? null, original_type: a.type },
       }
     })
     const { error } = await db.from("activities").upsert(rows, { onConflict: "user_id,source,external_id" })

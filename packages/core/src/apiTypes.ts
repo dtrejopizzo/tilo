@@ -379,6 +379,7 @@ export interface IngestPayload {
     max_hr?: number
     steps?: number
     elevation_m?: number
+    raw?: Record<string, unknown> // provider-specific extras, kept for diagnostics
   }[]
   weights?: { date: string; kg: number; body_fat_pct?: number }[]
 }
