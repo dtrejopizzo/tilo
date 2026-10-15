@@ -122,6 +122,20 @@ button.chip[aria-pressed="true"] { background: var(--leaf); color: #fff; }
 .dash .chip { font-size: 11px; padding: 2px 8px; }
 .dash .legend { font-size: 11.5px; }
 .dash .energy-bar { height: 22px; }
+/* habits | meals side by side in the status column */
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+.pair .macro { flex-wrap: wrap; white-space: normal; }
+.pair .row .t { white-space: normal; line-height: 1.3; }
+.pair .row { align-items: flex-start; }
+.pair .row .cbx { margin-top: 1px; }
+@media (max-width: 1280px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+/* agenda: the meeting in progress */
+.now { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-weight: 500; }
+.pulse { width: 8px; height: 8px; border-radius: 50%; background: #f5c518; flex: none; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(245, 197, 24, .55); } 50% { opacity: .35; box-shadow: 0 0 0 4px rgba(245, 197, 24, 0); } }
+.row.ag { position: relative; }
+.row.ag.live { background: color-mix(in srgb, #f5c518 7%, transparent); }
+.ag-left { position: absolute; left: 8px; bottom: 0; height: 2px; border-radius: 2px; transition: width 1s linear; max-width: calc(100% - 16px); }
 .dash { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(250px, 0.8fr) minmax(380px, 1.35fr); gap: 10px; align-items: start; min-width: 0; }
 .dash .col { display: flex; flex-direction: column; gap: 10px; }
 .dash .col > * { flex: none; } /* cards keep their height; the column scrolls, nothing gets squeezed */

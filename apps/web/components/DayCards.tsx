@@ -5,7 +5,7 @@ import type { TodayView } from "@tilo/core/today"
 import { Check, EyeOff, Lightbulb, Mail, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, type ReactNode } from "react"
-import { crud, fmt, litres, tilo } from "@/lib/client/api"
+import { crud, fmt, litres, localDate, tilo } from "@/lib/client/api"
 import type { useDay } from "@/lib/client/useDay"
 
 type Mutate = ReturnType<typeof useDay>["mutate"]
@@ -239,40 +239,75 @@ function useCalendar(date: string) {
 
 const normTitle = (t: string) => t.trim().toLowerCase()
 
-// Calendar events of the day, from every connected Google account. Recurring blocks the person
-// doesn't need to see (sleep, training) can be hidden by title; the list lives in settings.
+// "dt@carbo.energy" → "carbo", "dtrejopizzo@gmail.com" → "gmail": which calendar an event came from
+const calendarLabel = (email?: string) => (email ? (email.split("@")[1] ?? email).split(".")[0] : "")
+const CAL_COLORS = ["var(--carbs)", "var(--protein)", "var(--fat)", "var(--leaf)", "#1fa6b8", "#d6457f"]
+
+function useNow(ms = 30_000) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), ms)
+    return () => clearInterval(t)
+  }, [ms])
+  return now
+}
+
+const left = (ms: number) => {
+  const m = Math.max(1, Math.round(ms / 60_000))
+  return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60 ? `${m % 60} min` : ""}`.trim() : `${m} min`
+}
+
+// Today's calendar from every connected Google account. Finished events drop off; the one in
+// progress shows how much is left. Recurring blocks (sleep, training) can be hidden by title.
 export function AgendaCard({ date, day, mutate }: CardProps) {
   const events = useCalendar(date)
+  const now = useNow()
   const hidden: string[] = ((day.settings as { hidden_events?: string[] } | null)?.hidden_events ?? []).map(normTitle)
   const [showHidden, setShowHidden] = useState(false)
   const time = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-  const accounts = new Set(events.map((e) => e.account).filter(Boolean))
-  const now = Date.now()
+  const accounts = [...new Set(events.map((e) => e.account).filter(Boolean))] as string[]
+  const color = (a?: string) => CAL_COLORS[Math.max(0, accounts.indexOf(a ?? "")) % CAL_COLORS.length]
   const setHidden = (next: string[]) =>
     mutate(
       (d) => ({ ...d, settings: { ...(d.settings ?? {}), hidden_events: next } }),
       () => tilo.request("PATCH", "/settings", { settings: { hidden_events: next } }),
     )
-  const visible = events.filter((e) => !hidden.includes(normTitle(e.title)))
-  const hiddenToday = events.filter((e) => hidden.includes(normTitle(e.title)))
+  const isToday = date === localDate()
+  const shown = events.filter((e) => !hidden.includes(normTitle(e.title)))
+  // On today, past timed events disappear; other days show everything
+  const visible = shown.filter((e) => !isToday || e.allDay || Date.parse(e.end) > now)
+  const current = isToday ? visible.find((e) => !e.allDay && Date.parse(e.start) <= now && Date.parse(e.end) > now) : undefined
+  const next = isToday ? visible.find((e) => !e.allDay && Date.parse(e.start) > now) : undefined
+  const meta = current ? (
+    <span className="now"><i className="pulse" />{current.title.slice(0, 28)} · quedan {left(Date.parse(current.end) - now)}</span>
+  ) : next ? (
+    `próxima en ${left(Date.parse(next.start) - now)}`
+  ) : (
+    `${visible.length} ${visible.length === 1 ? "evento" : "eventos"}`
+  )
   return (
-    <Card title="Agenda" meta={`${visible.length} ${visible.length === 1 ? "reunión" : "reuniones"}`}>
-      {visible.map((ev) => (
-        <div key={ev.id} className={`row${!ev.allDay && Date.parse(ev.end) < now ? " done" : ""}`}>
-          <span className="time">{ev.allDay ? "día" : time(ev.start)}</span>
-          <span className="t event wrap">{ev.title}</span>
-          {accounts.size > 1 && ev.account && <span className="d">{ev.account.split("@")[0]}</span>}
-          {ev.meetLink && <a className="d" href={ev.meetLink} target="_blank" rel="noreferrer">Meet</a>}
-          <span className="actions">
-            <button className="iconbtn" title={`Ocultar "${ev.title}" siempre`} aria-label={`Ocultar ${ev.title} siempre`} onClick={() => setHidden([...new Set([...hidden, normTitle(ev.title)])])}><EyeOff /></button>
-          </span>
-        </div>
-      ))}
-      {!visible.length && <div className="empty">Sin reuniones hoy.</div>}
+    <Card title="Agenda" meta={meta}>
+      {visible.map((ev) => {
+        const live = ev === current
+        const remaining = live ? (Date.parse(ev.end) - now) / (Date.parse(ev.end) - Date.parse(ev.start)) : 0
+        return (
+          <div key={ev.id} className={`row ag${live ? " live" : ""}`}>
+            <span className="time">{ev.allDay ? "día" : time(ev.start)}</span>
+            <span className="t event wrap" style={{ borderLeftColor: color(ev.account) }}>{ev.title}</span>
+            {accounts.length > 1 && ev.account && <span className="d" style={{ color: color(ev.account) }}>{calendarLabel(ev.account)}</span>}
+            {ev.meetLink && <a className="d" href={ev.meetLink} target="_blank" rel="noreferrer">Meet</a>}
+            <span className="actions">
+              <button className="iconbtn" title={`Ocultar "${ev.title}" siempre`} aria-label={`Ocultar ${ev.title} siempre`} onClick={() => setHidden([...new Set([...hidden, normTitle(ev.title)])])}><EyeOff /></button>
+            </span>
+            {live && <i className="ag-left" style={{ width: `${Math.max(0, Math.min(1, remaining)) * 100}%`, background: color(ev.account) }} />}
+          </div>
+        )
+      })}
+      {!visible.length && <div className="empty">{shown.length ? "Terminaste la agenda de hoy." : "Sin reuniones hoy."}</div>}
       {hidden.length > 0 && (
         <>
           <button className="row" style={{ width: "100%", border: 0, background: "none", cursor: "pointer", color: "var(--muted)" }} onClick={() => setShowHidden(!showHidden)}>
-            <span className="t" style={{ textAlign: "left", fontSize: 12 }}>{hidden.length} {hidden.length === 1 ? "evento oculto" : "eventos ocultos"}{hiddenToday.length ? ` · ${hiddenToday.length} hoy` : ""} {showHidden ? "▾" : "▸"}</span>
+            <span className="t" style={{ textAlign: "left", fontSize: 12 }}>{hidden.length} {hidden.length === 1 ? "evento oculto" : "eventos ocultos"} {showHidden ? "▾" : "▸"}</span>
           </button>
           {showHidden && hidden.map((h) => (
             <div key={h} className="row" style={{ paddingLeft: 16 }}>
@@ -343,19 +378,93 @@ export function TasksCard({ date, day, view, mutate }: CardProps) {
 
 // ---------- Checklist (habits + supplements by time of day) ----------
 
-export function ChecklistCard({ date, view, mutate }: CardProps) {
+const WEEKDAYS = ["L", "M", "X", "J", "V", "S", "D"] // 0 = Monday … 6 = Sunday
+
+// Name, days of the week and daily/weekly; the same fields as Settings, right in the card
+function HabitForm({ initial, onSave, onCancel, onArchive }: {
+  initial: { name: string; days: number[] }
+  onSave: (v: { name: string; days: number[]; frequency: "daily" | "weekly"; per_week: number }) => void
+  onCancel: () => void
+  onArchive?: () => void
+}) {
+  const [name, setName] = useState(initial.name)
+  const [days, setDays] = useState<number[]>(initial.days)
+  return (
+    <form
+      className="task-edit"
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (!name.trim() || !days.length) return
+        onSave({ name: name.trim(), days: [...days].sort(), frequency: days.length === 7 ? "daily" : "weekly", per_week: days.length })
+      }}
+      onKeyDown={(e) => e.key === "Escape" && onCancel()}
+    >
+      <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Hábito (leer 20 min, meditar…)" aria-label="Nombre del hábito" autoFocus />
+      <div className="task-edit-row">
+        <span className="days" role="group" aria-label="Días">
+          {WEEKDAYS.map((d, i) => (
+            <button key={i} type="button" aria-pressed={days.includes(i)} onClick={() => setDays(days.includes(i) ? days.filter((x) => x !== i) : [...days, i])}>{d}</button>
+          ))}
+        </span>
+        <button type="button" className="btn ghost sm" onClick={() => setDays(days.length === 7 ? [0, 1, 2, 3, 4] : [0, 1, 2, 3, 4, 5, 6])}>{days.length === 7 ? "Lun a vie" : "Todos"}</button>
+        <span className="spacer" />
+        <button type="button" className="btn ghost sm" onClick={onCancel}>Cancelar</button>
+        <button className="btn leaf sm" disabled={!name.trim() || !days.length}>Guardar</button>
+        {onArchive && <button type="button" className="iconbtn" title="Archivar hábito" aria-label="Archivar hábito" onClick={onArchive}><Trash2 /></button>}
+      </div>
+    </form>
+  )
+}
+
+export function ChecklistCard({ date, day, view, mutate }: CardProps) {
   const low = view.checklist.flatMap((g) => g.items).filter((i) => i.lowStock)
+  const [adding, setAdding] = useState(false)
+  const [editing, setEditing] = useState<string | null>(null)
   return (
     <Card
       title="Hábitos y suplementos"
       meta={`${view.checklistDone}/${view.checklistTotal}`}
-      actions={low.length ? <span className="pill warn">stock bajo: {low.map((i) => i.name).join(", ")}</span> : undefined}
+      actions={
+        <>
+          {low.length > 0 && <span className="pill warn" title={`Stock bajo: ${low.map((i) => i.name).join(", ")}`}>stock bajo · {low.length}</span>}
+          <button className="iconbtn" title="Nuevo hábito" aria-label="Nuevo hábito" onClick={() => setAdding(true)}><Plus /></button>
+        </>
+      }
     >
+      {adding && (
+        <HabitForm
+          initial={{ name: "", days: [0, 1, 2, 3, 4, 5, 6] }}
+          onCancel={() => setAdding(false)}
+          onSave={(v) => {
+            setAdding(false)
+            void mutate(null, () => crud.create("habits", { ...v, position: day.habits.length }), "Hábito agregado")
+          }}
+        />
+      )}
       {!view.checklistTotal && <div className="empty">Agregá hábitos y suplementos en Settings y aparecen acá, ordenados por momento del día.</div>}
       {view.checklist.map((g) => (
         <div key={g.slot}>
           <div className="slot">{g.label}</div>
-          {g.items.map((i) => (
+          {g.items.map((i) => {
+            const habit = i.kind === "habit" ? day.habits.find((h) => h.id === i.id) : undefined
+            if (habit && editing === habit.id) {
+              return (
+                <HabitForm
+                  key={i.id}
+                  initial={{ name: habit.name, days: (habit as { days?: number[] }).days ?? [0, 1, 2, 3, 4, 5, 6] }}
+                  onCancel={() => setEditing(null)}
+                  onSave={(v) => {
+                    setEditing(null)
+                    void mutate((d) => ({ ...d, habits: d.habits.map((h) => (h.id === habit.id ? { ...h, name: v.name } : h)) }), () => crud.update("habits", habit.id, v), "Hábito actualizado")
+                  }}
+                  onArchive={() => {
+                    setEditing(null)
+                    void mutate((d) => ({ ...d, habits: d.habits.filter((h) => h.id !== habit.id) }), () => crud.update("habits", habit.id, { archived: true }), "Hábito archivado")
+                  }}
+                />
+              )
+            }
+            return (
             <div key={i.id} className={`row${i.done ? " done" : ""}`}>
               <Checkbox
                 done={i.done}
@@ -370,11 +479,16 @@ export function ChecklistCard({ date, view, mutate }: CardProps) {
                   )
                 }
               />
-              <span className="t">{i.name}</span>
+              {habit ? (
+                <span className="t" role="button" tabIndex={0} title="Click para editar" style={{ cursor: "pointer" }} onClick={() => setEditing(habit.id)} onKeyDown={(e) => e.key === "Enter" && setEditing(habit.id)}>{i.name}</span>
+              ) : (
+                <span className="t">{i.name}</span>
+              )}
               {i.auto && i.done ? <span className="pill auto">auto</span> : <span className="d">{i.detail}</span>}
               {i.kind === "supplement" && <span className="pill">supl.</span>}
             </div>
-          ))}
+            )
+          })}
         </div>
       ))}
     </Card>
