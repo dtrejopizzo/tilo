@@ -1,6 +1,6 @@
 "use client"
 
-import type { DayData, Meal, Task } from "@tilo/core/apiTypes"
+import { MEAL_TYPES, type DayData, type Meal, type Task } from "@tilo/core/apiTypes"
 import type { TodayView } from "@tilo/core/today"
 import { Check, EyeOff, Lightbulb, Mail, Pencil, Plus, Trash2, X } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -524,28 +524,45 @@ function MealRow({ m, mutate }: { m: Meal; mutate: Mutate }) {
     )
   }
   const assumptions = (m.micros as { _assumptions?: string } | null)?._assumptions
+  const r = (v: unknown) => Math.round(Number(v ?? 0))
   return (
-    <div className="row" title={assumptions ? `Supuestos: ${assumptions}` : undefined}>
-      <span className="time">{m.eaten_at?.slice(0, 5) ?? ""}</span>
-      <button className="t" onClick={() => setEdit(true)}>{m.description}</button>
-      <span className="macro">
-        <span>{fmt(Number(m.kcal))}</span>
-        <span className="p">P{Math.round(Number(m.protein_g))}</span>
-        <span className="c">C{Math.round(Number(m.carbs_g))}</span>
-        <span className="f">G{Math.round(Number(m.fat_g))}</span>
-      </span>
-      <span className="actions"><button className="iconbtn" aria-label={`Editar ${m.description}`} onClick={() => setEdit(true)}><Pencil /></button></span>
+    <div className="meal-row" title={assumptions ? `Supuestos: ${assumptions}` : undefined} onClick={() => setEdit(true)} role="button" tabIndex={0} onKeyDown={(e) => e.key === "Enter" && setEdit(true)}>
+      <span className="mt">{MEAL_LABEL[m.meal_type ?? ""] ?? "Comida"}</span>
+      <span className="md">{m.description}</span>
+      <span className="mn">{fmt(Number(m.kcal))}</span>
+      <span className="mn p">{r(m.protein_g)}</span>
+      <span className="mn c">{r(m.carbs_g)}</span>
+      <span className="mn f">{r(m.fat_g)}</span>
+      <span className="mn">{r(m.fiber_g)}</span>
     </div>
   )
 }
+
+const MEAL_LABEL: Record<string, string> = Object.fromEntries(MEAL_TYPES.map((t) => [t.type, t.label]))
+const MEAL_ORDER: Record<string, number> = Object.fromEntries(MEAL_TYPES.map((t, i) => [t.type, i]))
 
 export function MealsCard({ day, view, mutate }: CardProps) {
   const n = view.nutrition
   const pct = (v: number, t: number) => `${Math.round((v / t) * 100)}%`
   return (
-    <Card title="Comidas" meta={<span className="mono">{fmt(n.kcal)}/{fmt(n.targets.kcal)} kcal · P{n.protein} C{n.carbs} G{n.fat}</span>}>
-      {day.meals.map((m) => <MealRow key={m.id} m={m} mutate={mutate} />)}
-      {!day.meals.length && <div className="empty">Escribí lo que comiste en la barra de arriba: “milanesa con puré”, “2 medialunas y un cortado”.</div>}
+    <Card title="Comidas" meta={`${day.meals.length} ${day.meals.length === 1 ? "registro" : "registros"}`}>
+      {day.meals.length > 0 && (
+        <div className="meal-row head">
+          <span className="mt" /><span className="md" />
+          <span className="mn">kcal</span><span className="mn p">prot</span><span className="mn c">carb</span><span className="mn f">grasa</span><span className="mn">fibra</span>
+        </div>
+      )}
+      {[...day.meals]
+        .sort((a, b) => (MEAL_ORDER[a.meal_type ?? "snack"] ?? 9) - (MEAL_ORDER[b.meal_type ?? "snack"] ?? 9) || (a.eaten_at ?? "").localeCompare(b.eaten_at ?? ""))
+        .map((m) => <MealRow key={m.id} m={m} mutate={mutate} />)}
+      {day.meals.length > 0 && (
+        <div className="meal-row total">
+          <span className="mt">Total</span>
+          <span className="md">objetivo {fmt(n.targets.kcal)} kcal · {n.targets.protein} g prot</span>
+          <span className="mn">{fmt(n.kcal)}</span><span className="mn p">{n.protein}</span><span className="mn c">{n.carbs}</span><span className="mn f">{n.fat}</span><span className="mn">{n.fiber}</span>
+        </div>
+      )}
+      {!day.meals.length && <div className="empty">Escribí lo que comiste en la barra de arriba: “almuerzo: 2 empanadas”, “merienda: café con leche y 2 medialunas”.</div>}
       {day.meals.length > 0 && (
         <div className="legend" style={{ paddingTop: 6 }}>
           <span><i className="m-p" />Proteína <b>{pct(n.protein, n.targets.protein)}</b></span>

@@ -1,6 +1,6 @@
 "use client"
 
-import type { DayData } from "@tilo/core/apiTypes"
+import { MEAL_TYPES, type DayData } from "@tilo/core/apiTypes"
 import { parseQuickAdd, type QuickAddResult } from "@tilo/core/quickAdd"
 import { Mic, Sparkles } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
@@ -27,7 +27,7 @@ function previewChips(r: QuickAddResult): string[] {
     case "supplement": return [r.name, ...(r.dose ? [`${r.dose} ${r.unit === "iu" ? "UI" : r.unit ?? ""}`] : [])]
     case "habit": return [r.name, "✓"]
     case "checkin": return [...(r.energy ? [`energía ${r.energy}`] : []), ...(r.mood ? [`ánimo ${r.mood}`] : [])]
-    case "meal": return [r.description, "calculamos calorías y macros con IA"]
+    case "meal": return [...(r.mealType ? [MEAL_TYPES.find((t) => t.type === r.mealType)!.label] : []), r.description || "…", "calculamos calorías y macros con IA"]
   }
 }
 
@@ -35,7 +35,7 @@ function previewChips(r: QuickAddResult): string[] {
 function examples(day: DayData | null): { kind: string; samples: string[] }[] {
   return [
     { kind: "Agua", samples: ["500 agua", "2 vasos", "+250"] },
-    { kind: "Comida", samples: ["2 empanadas y una manzana", "almuerzo: milanesa con puré", "café con leche"] },
+    { kind: "Comida", samples: ["almuerzo: 2 empanadas", "desayuno: avena con banana", "merienda: café con leche y 2 medialunas", "colación tarde: una manzana", "cena: milanesa con puré"] },
     { kind: "Entrenamiento", samples: ["banca 80x8x3", "sentadilla 100x5x5 rpe 8", "dominadas 3x10"] },
     { kind: "Cardio", samples: ["corrí 5 km en 28 min", "bici 45 min", "caminé 40 min"] },
     { kind: "Tarea", samples: ["tarea: revisar PR mañana !alta #trabajo", "tarea: pagar monotributo el viernes"] },
@@ -131,6 +131,15 @@ export function QuickAdd({ date, day, compact = false, autoFocusKey = true, mode
     rec.start()
   }
 
+  // A meal without a moment: offer the moments so the entry says when it was eaten
+  const moments = parsed?.kind === "meal" && !parsed.mealType && (
+    <div className="qa-group" style={{ padding: "4px 4px 0" }}>
+      <span className="qa-kind">¿Qué comida?</span>
+      {MEAL_TYPES.map((t) => (
+        <button key={t.type} type="button" className="chip" onClick={() => { setText(`${t.label.toLowerCase()}: ${parsed.description}`); input.current?.focus() }}>{t.label}</button>
+      ))}
+    </div>
+  )
   const preview = parsed && (
     <div className="qa-preview">
       <span className="chip kind">{KIND_LABEL[parsed.kind]}</span>
@@ -180,7 +189,7 @@ export function QuickAdd({ date, day, compact = false, autoFocusKey = true, mode
         open && (
           <div className="qa-drop">
             {parsed ? (
-              preview
+              <>{preview}{moments}</>
             ) : text.trim() ? (
               <div className="qa-hint">No lo entendí todavía. Si es comida, escribila como la comerías; si es una tarea, empezá con "tarea:".</div>
             ) : (

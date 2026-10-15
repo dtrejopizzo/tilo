@@ -112,7 +112,7 @@ export function registerTiloTools(server: McpServer, api: TiloApi, today: () => 
         "AI does it, which may need Tilo Pro.",
       inputSchema: {
         description: z.string().min(1),
-        meal_type: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
+        meal_type: z.enum(["breakfast", "morning_snack", "lunch", "merienda", "afternoon_snack", "dinner", "snack"]).optional(),
         kcal: z.number().min(0).max(5000).optional(),
         protein_g: z.number().min(0).max(500).optional(),
         carbs_g: z.number().min(0).max(800).optional(),

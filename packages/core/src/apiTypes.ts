@@ -89,11 +89,24 @@ export interface Supplement {
   taken: boolean
 }
 
+export type MealType = "breakfast" | "morning_snack" | "lunch" | "merienda" | "afternoon_snack" | "dinner" | "snack"
+
+// In the order of the day, with the words people use for each
+export const MEAL_TYPES: { type: MealType; label: string }[] = [
+  { type: "breakfast", label: "Desayuno" },
+  { type: "morning_snack", label: "Colación mañana" },
+  { type: "lunch", label: "Almuerzo" },
+  { type: "merienda", label: "Merienda" },
+  { type: "afternoon_snack", label: "Colación tarde" },
+  { type: "dinner", label: "Cena" },
+  { type: "snack", label: "Colación extra" },
+]
+
 export interface Meal {
   id: string
   date: string
   eaten_at: string | null
-  meal_type: "breakfast" | "lunch" | "dinner" | "snack" | null
+  meal_type: MealType | null
   description: string
   kcal: number
   protein_g: number

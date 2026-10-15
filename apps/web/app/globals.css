@@ -129,6 +129,19 @@ button.chip[aria-pressed="true"] { background: var(--leaf); color: #fff; }
 .pair .row { align-items: flex-start; }
 .pair .row .cbx { margin-top: 1px; }
 @media (max-width: 1280px) { .pair { grid-template-columns: minmax(0, 1fr); } }
+/* meals: one line per entry, aligned numeric columns */
+.meal-row { display: grid; grid-template-columns: 112px minmax(0, 1fr) repeat(5, 46px); gap: 6px; align-items: center; padding: 4px 10px; border-radius: 7px; cursor: pointer; }
+.meal-row:hover { background: var(--surface-2); }
+.meal-row .mt { font-weight: 600; font-size: 12px; white-space: nowrap; }
+.meal-row .md { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.meal-row .mn { font: 12px var(--mono); text-align: right; }
+.meal-row .p { color: var(--protein); } .meal-row .c { color: var(--carbs); } .meal-row .f { color: var(--fat); }
+.meal-row.head { cursor: default; padding-top: 6px; padding-bottom: 0; }
+.meal-row.head:hover { background: none; }
+.meal-row.head .mn { font: 10px var(--ui); text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+.meal-row.total { cursor: default; border-top: 1px solid var(--line); border-radius: 0; margin-top: 2px; }
+.meal-row.total:hover { background: none; }
+.meal-row.total .mn { font-weight: 600; }
 /* agenda: the meeting in progress */
 .now { display: inline-flex; align-items: center; gap: 6px; color: var(--fg); font-weight: 500; }
 .pulse { width: 8px; height: 8px; border-radius: 50%; background: #f5c518; flex: none; animation: pulse 1.6s ease-in-out infinite; }

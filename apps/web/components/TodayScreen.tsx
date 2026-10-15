@@ -24,10 +24,8 @@ export function DayGrid({ date }: { date: string }) {
         <div className="col agenda"><AgendaCard {...p} /></div>
         <div className="col status">
           <EnergyCard {...p} />
-          <div className="pair">
-            <ChecklistCard {...p} />
-            <MealsCard {...p} />
-          </div>
+          <MealsCard {...p} />
+          <ChecklistCard {...p} />
         </div>
       </div>
     </>

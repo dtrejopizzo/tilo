@@ -21,7 +21,7 @@ export type QuickAddResult =
   | { kind: "supplement"; name: string; supplementId?: string; presetKey?: string; dose?: number; unit?: SupplementUnit }
   | { kind: "habit"; habitId: string; name: string }
   | { kind: "checkin"; energy?: number; mood?: number }
-  | { kind: "meal"; description: string; mealType?: "breakfast" | "lunch" | "dinner" | "snack" }
+  | { kind: "meal"; description: string; mealType?: "breakfast" | "morning_snack" | "lunch" | "merienda" | "afternoon_snack" | "dinner" | "snack" }
 
 export interface QuickAddContext {
   today: string // YYYY-MM-DD, user's local date
@@ -170,9 +170,23 @@ export function parseQuickAdd(input: string, ctx: QuickAddContext): QuickAddResu
 
   // Explicit prefixes
   if (/^(tarea|task|todo|pendiente)\b/.test(t) || /(^|\s)!(alta|high|baja|low|media|medium|urgente)\b/.test(t)) return parseTask(raw, ctx)
-  if (/^(comida|comi|almuerzo|cena|desayuno|merienda|snack)\b/.test(t) && !/\b(agua|cafe)\b/.test(t)) {
-    const mealType = /^desayuno/.test(t) ? "breakfast" : /^almuerzo/.test(t) ? "lunch" : /^cena/.test(t) ? "dinner" : /^(merienda|snack)/.test(t) ? "snack" : undefined
-    return { kind: "meal", description: raw.replace(/^(comida|comí|comi|almuerzo|cena|desayuno|merienda|snack)\s*:?\s*/i, ""), mealType }
+  // Meal moment prefixes: "almuerzo: …", "colación tarde: …", "merienda 2 medialunas"
+  const MOMENTS: [RegExp, NonNullable<Extract<QuickAddResult, { kind: "meal" }>["mealType"]> | undefined][] = [
+    [/^(colacion|snack|colación) (de la )?(manana|mañana)\b/, "morning_snack"],
+    [/^(colacion|snack|colación) (de la )?tarde\b/, "afternoon_snack"],
+    [/^(colacion|colación|snack)( extra)?\b/, "snack"],
+    [/^desayuno\b/, "breakfast"],
+    [/^almuerzo\b/, "lunch"],
+    [/^merienda\b/, "merienda"],
+    [/^cena\b/, "dinner"],
+    [/^(comida|comi)\b/, undefined],
+  ]
+  const moment = MOMENTS.find(([re]) => re.test(t))
+  // An explicit moment ("merienda: café con leche") is a meal; the AI still counts its caffeine
+  if (moment && (moment[1] || !/\b(agua|cafe)\b/.test(t))) {
+    const words = t.match(moment[0])![0].split(" ").length
+    const description = raw.split(/\s+/).slice(words).join(" ").replace(/^:\s*/, "").trim()
+    return { kind: "meal", description, mealType: moment[1] }
   }
 
   // Water: "500 agua", "agua 1.5l", "2 vasos de agua", "+250"

@@ -8,7 +8,7 @@ export interface MealMacros {
   carbs_g: number
   fat_g: number
   fiber_g: number
-  meal_type?: "breakfast" | "lunch" | "dinner" | "snack"
+  meal_type?: import("@tilo/core/apiTypes").MealType
 }
 
 const PROMPT = `You are a precise nutritionist. Estimate the meal below. Respect explicit quantities and brands

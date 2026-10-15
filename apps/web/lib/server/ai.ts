@@ -149,7 +149,7 @@ Return JSON:
 {"items":[{"name":string,"grams":number,"kcal":number,"protein_g":number,"carbs_g":number,"fat_g":number}],
  "kcal":number,"protein_g":number,"carbs_g":number,"fat_g":number,"fiber_g":number,"alcohol_g":number,"caffeine_mg":number,
  "micros":{"sodium_mg":number,"potassium_mg":number,"calcium_mg":number,"iron_mg":number,"magnesium_mg":number,"vitamin_c_mg":number,"vitamin_a_mcg":number,"vitamin_d_iu":number,"vitamin_b12_mcg":number},
- "meal_type":"breakfast"|"lunch"|"dinner"|"snack","assumptions":string}`
+ "meal_type":"breakfast"|"morning_snack"|"lunch"|"merienda"|"afternoon_snack"|"dinner"|"snack","assumptions":string}`
 
 export interface MealEstimate {
   items: { name: string; grams: number; kcal: number; protein_g: number; carbs_g: number; fat_g: number }[]
@@ -161,7 +161,7 @@ export interface MealEstimate {
   alcohol_g: number
   caffeine_mg: number
   micros: Record<string, number>
-  meal_type: "breakfast" | "lunch" | "dinner" | "snack"
+  meal_type: "breakfast" | "morning_snack" | "lunch" | "merienda" | "afternoon_snack" | "dinner" | "snack"
   assumptions: string
 }
 
@@ -178,7 +178,7 @@ export async function estimateMeal(userId: string, description: string, localTim
     kcal: n(r.kcal), protein_g: n(r.protein_g), carbs_g: n(r.carbs_g), fat_g: n(r.fat_g), fiber_g: n(r.fiber_g),
     alcohol_g: n(r.alcohol_g), caffeine_mg: n(r.caffeine_mg),
     micros: Object.fromEntries(Object.entries(r.micros ?? {}).filter(([, v]) => typeof v === "number" && v > 0)),
-    meal_type: ["breakfast", "lunch", "dinner", "snack"].includes(r.meal_type) ? r.meal_type : "snack",
+    meal_type: ["breakfast", "morning_snack", "lunch", "merienda", "afternoon_snack", "dinner", "snack"].includes(r.meal_type) ? r.meal_type : "snack",
     assumptions: typeof r.assumptions === "string" ? r.assumptions.slice(0, 300) : "",
   }
 }
