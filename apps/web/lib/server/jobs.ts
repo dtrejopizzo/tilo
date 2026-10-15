@@ -33,11 +33,17 @@ export async function runSync(): Promise<Record<string, number | string>> {
     if (hasFeature(c.scopes, "health")) jobs.push(syncGoogleHealth(c.user_id, c.external_id, 2))
     if (hasFeature(c.scopes, "gmail")) {
       jobs.push(
-        gmailInboxCheck(c.user_id, c.external_id, c.account_email ?? "", localToday(tz.get(c.user_id) ?? "UTC")).then((r) => {
-          ;(stats.mailTasks as number) += r.created
-          ;(stats.mailClosed as number) += r.closed
-          return markSynced(c.user_id, "google", c.external_id)
-        }),
+        gmailInboxCheck(c.user_id, c.external_id, c.account_email ?? "", localToday(tz.get(c.user_id) ?? "UTC")).then(
+          (r) => {
+            ;(stats.mailTasks as number) += r.created
+            ;(stats.mailClosed as number) += r.closed
+            return markSynced(c.user_id, "google", c.external_id)
+          },
+          async (e) => {
+            await markSynced(c.user_id, "google", c.external_id, `mail: ${String(e?.stack ?? e).slice(0, 400)}`)
+            throw e
+          },
+        ),
       )
     }
     const results = await Promise.allSettled(jobs)
