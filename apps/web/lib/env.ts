@@ -26,4 +26,8 @@ export const env = {
   stravaVerifyToken: () => required("STRAVA_WEBHOOK_VERIFY_TOKEN"),
   cronSecret: () => required("CRON_SECRET"),
   aiFreeDailyRequests: () => Number(process.env.AI_FREE_DAILY_REQUESTS ?? 30),
+  // Pro: monthly AI budget per person, priced from tokens (USD per million, Gemini Flash list price)
+  aiProMonthlyUsd: () => Number(process.env.AI_PRO_MONTHLY_USD ?? 20),
+  aiPriceInputPerM: () => Number(process.env.AI_PRICE_INPUT_PER_M ?? 0.5),
+  aiPriceOutputPerM: () => Number(process.env.AI_PRICE_OUTPUT_PER_M ?? 3),
 }

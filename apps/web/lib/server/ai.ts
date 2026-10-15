@@ -23,7 +23,6 @@ const DEFAULT_MODELS: Record<Provider, string> = {
   anthropic: "claude-haiku-4-5-20251001",
 }
 
-const PRO_DAILY_REQUESTS = 300
 
 export const AI_UPSELL =
   "Tu prueba de IA terminó. Pasá a Tilo Pro, cargá tu propia API key en Settings → IA, o registrá desde Claude/ChatGPT con el MCP de Tilo (gratis)."
@@ -45,16 +44,21 @@ async function credentialsFor(userId: string): Promise<AiCredentials> {
   const key = env.geminiKey()
   if (!key) throw new Error("GEMINI_API_KEY is not set")
 
-  const cap = profile?.plan === "pro" ? PRO_DAILY_REQUESTS : env.aiFreeDailyRequests()
   const today = new Date().toISOString().slice(0, 10)
+  if (profile?.plan === "pro") {
+    // Pro: a monthly budget in dollars, from the tokens actually used this month
+    const { data: month } = await db.from("ai_usage").select("input_tokens, output_tokens").eq("user_id", userId).gte("date", `${today.slice(0, 7)}-01`)
+    const spent = (month ?? []).reduce((s, r) => s + (r.input_tokens * env.aiPriceInputPerM() + r.output_tokens * env.aiPriceOutputPerM()) / 1e6, 0)
+    if (spent >= env.aiProMonthlyUsd()) {
+      throw new PaymentRequiredError(`Llegaste al tope de IA de este mes (US$${env.aiProMonthlyUsd()}). Se renueva el 1°, o cargá tu propia API key en Settings → IA.`)
+    }
+    return { provider: "gemini", apiKey: key, model: env.geminiModel(), own: false }
+  }
+  const cap = env.aiFreeDailyRequests()
   const { data: usage } = await db.from("ai_usage").select("requests").eq("user_id", userId).eq("date", today)
   const used = (usage ?? []).reduce((s, r) => s + r.requests, 0)
   if (used >= cap) {
-    throw new PaymentRequiredError(
-      profile?.plan === "pro"
-        ? `Llegaste al límite diario de IA (${cap}). Vuelve mañana o cargá tu propia API key.`
-        : `Llegaste al límite diario de IA de la prueba (${cap}). ${AI_UPSELL}`,
-    )
+    throw new PaymentRequiredError(`Llegaste al límite diario de IA de la prueba (${cap}). ${AI_UPSELL}`)
   }
   return { provider: "gemini", apiKey: key, model: env.geminiModel(), own: false }
 }
