@@ -34,7 +34,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="es" className={`${geist.variable} ${geistMono.variable}`}>
+    <html lang="es" className={`${geist.variable} ${geistMono.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Apply the saved theme before the first paint; "system" leaves it to prefers-color-scheme */}
+        <script dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("tilo.theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}` }} />
+      </head>
       <body>
         {children}
         <Analytics />

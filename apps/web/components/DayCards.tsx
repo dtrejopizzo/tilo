@@ -126,7 +126,24 @@ function TaskFields({ id, projects, project, setProject, due, setDue, priority, 
   )
 }
 
-const taskGrid = { gridTemplateColumns: "minmax(0,1fr) 130px 140px 90px auto auto" }
+// Titles can carry a link (a form, a job post, a startup program): show it clickable, in a new tab
+const URL_RE = /(https?:\/\/[^\s<>"']+)/g
+function TaskTitle({ text }: { text: string }) {
+  const parts = text.split(URL_RE)
+  return (
+    <>
+      {parts.map((part, i) =>
+        URL_RE.test(part) && (URL_RE.lastIndex = 0) === 0 && /^https?:\/\//.test(part) ? (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="link" onClick={(e) => e.stopPropagation()} title={part}>
+            {part.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "").slice(0, 48)}{part.replace(/^https?:\/\/(www\.)?/, "").length > 48 ? "…" : ""}
+          </a>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  )
+}
 
 function TaskRow({ t, date, mutate, projects }: { t: Task; date: string; mutate: Mutate; projects: DayData["projects"] }) {
   const [editing, setEditing] = useState(false)
@@ -140,8 +157,7 @@ function TaskRow({ t, date, mutate, projects }: { t: Task; date: string; mutate:
   if (editing) {
     return (
       <form
-        className="edit"
-        style={taskGrid}
+        className="task-edit"
         onSubmit={(e) => {
           e.preventDefault()
           setEditing(false)
@@ -150,18 +166,24 @@ function TaskRow({ t, date, mutate, projects }: { t: Task; date: string; mutate:
             () => tilo.updateTask(t.id, { title, due_date: due || null, priority, project: projectName.trim() || null }, date),
           )
         }}
+        onKeyDown={(e) => e.key === "Escape" && setEditing(false)}
       >
-        <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Título" autoFocus />
-        <TaskFields id={t.id} projects={projects} project={projectName} setProject={setProjectName} due={due} setDue={setDue} priority={priority} setPriority={setPriority} />
-        <button className="btn leaf sm">Listo</button>
-        <button
-          type="button"
-          className="iconbtn"
-          aria-label="Borrar tarea"
-          onClick={() => mutate((d) => ({ ...d, tasks: d.tasks.filter((x) => x.id !== t.id) }), () => tilo.request("DELETE", `/tasks/${t.id}`), "Tarea borrada")}
-        >
-          <Trash2 />
-        </button>
+        <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Título" autoFocus placeholder="Título (puede incluir un link)" />
+        <div className="task-edit-row">
+          <TaskFields id={t.id} projects={projects} project={projectName} setProject={setProjectName} due={due} setDue={setDue} priority={priority} setPriority={setPriority} />
+          <span className="spacer" />
+          <button type="button" className="btn ghost sm" onClick={() => setEditing(false)}>Cancelar</button>
+          <button className="btn leaf sm">Guardar</button>
+          <button
+            type="button"
+            className="iconbtn"
+            aria-label="Borrar tarea"
+            title="Borrar tarea"
+            onClick={() => mutate((d) => ({ ...d, tasks: d.tasks.filter((x) => x.id !== t.id) }), () => tilo.request("DELETE", `/tasks/${t.id}`), "Tarea borrada")}
+          >
+            <Trash2 />
+          </button>
+        </div>
       </form>
     )
   }
@@ -177,7 +199,7 @@ function TaskRow({ t, date, mutate, projects }: { t: Task; date: string; mutate:
           )
         }
       />
-      <button className="t" onClick={() => setEditing(true)}>{t.title}</button>
+      <span className="t" role="button" tabIndex={0} title="Click para editar" onClick={() => setEditing(true)} onKeyDown={(e) => e.key === "Enter" && setEditing(true)}><TaskTitle text={t.title} /></span>
       {t.priority === "high" && !done && <span className="pill red">alta</span>}
       {t.priority === "low" && !done && <span className="d">baja</span>}
       {project && <span className="d">{project.name}</span>}
@@ -286,8 +308,7 @@ export function TasksCard({ date, day, view, mutate }: CardProps) {
   return (
     <Card title="Tareas" meta={`${total} pendientes${fromMail ? ` · ${fromMail} de mails` : ""} · ${view.tasks.doneToday.length} hechas hoy`}>
       <form
-        className={adding.trim() ? "edit" : "row"}
-        style={adding.trim() ? taskGrid : undefined}
+        className={adding.trim() ? "task-edit" : "row"}
         onSubmit={(e) => {
           e.preventDefault()
           if (!adding.trim()) return
@@ -300,12 +321,14 @@ export function TasksCard({ date, day, view, mutate }: CardProps) {
       >
         {!adding.trim() && <Plus size={16} color="var(--faint)" aria-hidden="true" />}
         <label htmlFor={`new-task-${date}`} className="sr-only">Nueva tarea</label>
-        <input id={`new-task-${date}`} className="input" style={adding.trim() ? undefined : { border: 0, padding: "2px 0", background: "none" }} placeholder="Nueva tarea" value={adding} onChange={(e) => setAdding(e.target.value)} />
+        <input id={`new-task-${date}`} className="input" style={adding.trim() ? undefined : { border: 0, padding: "2px 0", background: "none" }} placeholder="Nueva tarea (texto o un link)" value={adding} onChange={(e) => setAdding(e.target.value)} />
         {adding.trim() && (
-          <>
+          <div className="task-edit-row">
             <TaskFields id={`new-${date}`} projects={day.projects} project={newProject} setProject={setNewProject} due={newDue} setDue={setNewDue} priority={newPriority} setPriority={setNewPriority} />
+            <span className="spacer" />
+            <button type="button" className="btn ghost sm" onClick={() => setAdding("")}>Cancelar</button>
             <button className="btn leaf sm">Agregar</button>
-          </>
+          </div>
         )}
       </form>
       {group("Vencidas", overdue)}

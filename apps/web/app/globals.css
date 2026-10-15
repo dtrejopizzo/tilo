@@ -125,8 +125,15 @@ button.chip[aria-pressed="true"] { background: var(--leaf); color: #fff; }
 .dash { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(250px, 0.8fr) minmax(380px, 1.35fr); gap: 10px; align-items: start; min-width: 0; }
 .dash .col { display: flex; flex-direction: column; gap: 10px; }
 .dash .col > * { flex: none; } /* cards keep their height; the column scrolls, nothing gets squeezed */
-.dash .edit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.dash .edit .input[type="date"] { grid-column: 1; }
+/* task create / edit: the title on its own line, then project · date · priority · actions */
+.task-edit { display: grid; gap: 6px; padding: 8px; background: var(--surface-2); border-radius: 8px; margin: 2px 0; }
+.task-edit > .input { font-size: 14px; }
+.task-edit-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.task-edit-row .input, .task-edit-row select.input { width: auto; flex: 1 1 110px; padding: 5px 7px; font-size: 12.5px; min-width: 0; }
+.task-edit-row .input[type="date"] { flex: 0 1 136px; }
+.task-edit-row .spacer { flex: 1 0 4px; }
+.link { color: var(--carbs); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--carbs) 40%, transparent); }
+.link:hover { text-decoration-color: var(--carbs); }
 @media (min-width: 1100px) and (min-height: 600px) {
   .shell { height: 100vh; min-height: 0; }
   .main.dashboard { height: 100%; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 12px; }

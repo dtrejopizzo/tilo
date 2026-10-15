@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronLeft, ChevronRight, Dumbbell, LogOut, Settings as SettingsIcon } from "lucide-react"
+import { ChevronLeft, ChevronRight, Dumbbell, LogOut, Monitor, Moon, Settings as SettingsIcon, Sun } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useState, type ReactNode } from "react"
@@ -22,7 +22,24 @@ export function useSelectedDate(): [string, (d: string) => void] {
   return [date, (d) => router.replace(d === localDate() ? pathname : `${pathname}?date=${d}`, { scroll: false })]
 }
 
+type Theme = "system" | "light" | "dark"
+function applyTheme(t: Theme) {
+  if (t === "system") delete document.documentElement.dataset.theme
+  else document.documentElement.dataset.theme = t
+  try {
+    if (t === "system") localStorage.removeItem("tilo.theme")
+    else localStorage.setItem("tilo.theme", t)
+  } catch {}
+}
+
 function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
+  const [theme, setTheme] = useState<Theme>("system")
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem("tilo.theme")
+      if (t === "light" || t === "dark") setTheme(t)
+    } catch {}
+  }, [])
   const pathname = usePathname()
   const [date, setDate] = useSelectedDate()
   const [settings, setSettings] = useState<string | null>(null)
@@ -131,6 +148,14 @@ function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
         {menu && (
           <div className="card" style={{ position: "absolute", right: 0, top: 38, minWidth: 200, padding: 6, zIndex: 30 }}>
             <div className="row"><span className="t">{user.name}</span></div>
+            <div className="row" style={{ gap: 6 }}>
+              <span className="d">Tema</span>
+              <span className="seg" style={{ marginLeft: "auto" }}>
+                {([["system", Monitor, "Sistema"], ["light", Sun, "Claro"], ["dark", Moon, "Oscuro"]] as const).map(([t, Icon, label]) => (
+                  <button key={t} className={theme === t ? "on" : ""} onClick={() => { setTheme(t); applyTheme(t) }} aria-label={`Tema ${label}`} title={label}><Icon size={14} /></button>
+                ))}
+              </span>
+            </div>
             <button className="row" style={{ width: "100%", border: 0, background: "none", cursor: "pointer" }} onClick={() => { setMenu(false); setSettings("connections") }}>Conectá tus datos</button>
             <button className="row" style={{ width: "100%", border: 0, background: "none", cursor: "pointer" }} onClick={() => { setMenu(false); router.push("/connect") }}>Asistente de configuración</button>
             <button

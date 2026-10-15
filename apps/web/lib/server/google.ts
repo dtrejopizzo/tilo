@@ -217,6 +217,17 @@ async function triageInbox(userId: string, token: string, accountEmail: string, 
     const from = senderName(e.from)
     let taskId: string | null = null
     if (r.category === "reply" || r.category === "deadline") {
+      // Every message in a thread is triaged, but a conversation is one task: reuse the open one
+      const { data: existing } = m.threadId
+        ? await db.from("tasks").select("id").eq("user_id", userId).eq("source", "email").eq("status", "todo").eq("source_ref->>thread_id", m.threadId).limit(1).maybeSingle()
+        : { data: null }
+      if (existing) {
+        await db.from("email_insights").upsert(
+          { user_id: userId, account_email: accountEmail, message_id: e.id, thread_id: m.threadId ?? null, received_at: e.date, from_name: from, subject: e.subject.slice(0, 300), category: r.category, due_date: dueDate, task_id: existing.id },
+          { onConflict: "user_id,message_id", ignoreDuplicates: true },
+        )
+        continue
+      }
       const soon = dueDate != null && Date.parse(dueDate) - Date.parse(today) <= 3 * 86_400_000
       const t = await api
         .addTask({
