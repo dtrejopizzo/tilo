@@ -5,6 +5,8 @@ function required(name: string): string {
   return value
 }
 
+const RETIRED_GEMINI = new Set(["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"])
+
 export const env = {
   supabaseUrl: () => required("NEXT_PUBLIC_SUPABASE_URL"),
   supabaseAnonKey: () => required("NEXT_PUBLIC_SUPABASE_ANON_KEY"),
@@ -12,7 +14,11 @@ export const env = {
   appUrl: () => (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, ""),
   tokenKey: () => required("TOKEN_ENCRYPTION_KEY"), // 32 bytes, base64 (openssl rand -base64 32)
   geminiKey: () => process.env.GEMINI_API_KEY ?? null,
-  geminiModel: () => process.env.GEMINI_MODEL ?? "gemini-3.8-flash",
+  // Google retires model names; a configured one that no longer exists falls back to the current default
+  geminiModel: () => {
+    const m = process.env.GEMINI_MODEL
+    return !m || RETIRED_GEMINI.has(m) ? "gemini-3.8-flash" : m
+  },
   googleClientId: () => required("GOOGLE_CLIENT_ID"),
   googleClientSecret: () => required("GOOGLE_CLIENT_SECRET"),
   stravaClientId: () => required("STRAVA_CLIENT_ID"),
