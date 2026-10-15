@@ -75,6 +75,8 @@ async function meter(userId: string, feature: string, input: number, output: num
 }
 
 // Asks the configured model for JSON matching `shape` (described in the prompt) and parses it
+const GEMINI_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"]
+
 export async function generateJson<T>(userId: string, feature: string, system: string, prompt: string): Promise<T> {
   const creds = await credentialsFor(userId)
   let text: string
@@ -83,11 +85,19 @@ export async function generateJson<T>(userId: string, feature: string, system: s
 
   if (creds.provider === "gemini") {
     const ai = new GoogleGenAI({ apiKey: creds.apiKey })
-    const res = await ai.models.generateContent({
-      model: creds.model,
-      contents: prompt,
-      config: { systemInstruction: system, responseMimeType: "application/json", temperature: 0 },
-    })
+    // Each Gemini model has its own daily quota: when one is used up (429), fall back to the lite ones
+    const models = [creds.model, ...GEMINI_FALLBACKS.filter((m) => m !== creds.model)]
+    let res: Awaited<ReturnType<typeof ai.models.generateContent>> | undefined
+    for (const [i, model] of models.entries()) {
+      try {
+        res = await ai.models.generateContent({ model, contents: prompt, config: { systemInstruction: system, responseMimeType: "application/json", temperature: 0 } })
+        break
+      } catch (e) {
+        const quota = /\b429\b|RESOURCE_EXHAUSTED|exceeded your current quota/i.test(String((e as Error)?.message ?? e))
+        if (!quota || i === models.length - 1) throw e
+      }
+    }
+    if (!res) throw new Error("Gemini: no response")
     text = res.text ?? ""
     inputTokens = res.usageMetadata?.promptTokenCount ?? 0
     outputTokens = res.usageMetadata?.candidatesTokenCount ?? 0
