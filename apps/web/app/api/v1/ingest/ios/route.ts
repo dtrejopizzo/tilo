@@ -29,7 +29,9 @@ export const POST = apiRoute(async ({ uid, req }) => {
 
   const daily: NonNullable<IngestPayload["daily"]>[number] = { date: today }
   const steps = num(b.steps), km = num(b.distance_km), kcal = num(b.active_kcal), hr = num(b.resting_hr), hrv = num(b.hrv_ms), sleep = num(b.sleep_h)
-  if (steps != null) daily.steps = Math.round(steps)
+  // Steps are whole: "8.432" and "8,432" are thousands separators, not decimals
+  const stepsInt = typeof b.steps === "string" ? Number(b.steps.replace(/\D/g, "")) || undefined : steps
+  if (stepsInt != null) daily.steps = Math.round(stepsInt)
   if (km != null) daily.distance_m = km * 1000
   if (kcal != null) daily.active_kcal = kcal
   if (hr != null && hr > 0) daily.resting_hr = hr
