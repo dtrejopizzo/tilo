@@ -437,6 +437,12 @@ async function listPoints(token: string, type: string, filter: string, pageSize 
   return out
 }
 
+// Daily summary types carry { date: { year, month, day } }
+function dailyDate(inner: unknown): string | null {
+  const d = (inner as { date?: { year: number; month: number; day: number } } | undefined)?.date
+  return d ? `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}` : null
+}
+
 // Local date of a sample: civilTime if Google provides it, else the physical timestamp's date
 function sampleDate(point: Record<string, unknown>, key: string): string | null {
   const inner = point[key] as Record<string, unknown> | undefined
@@ -491,7 +497,7 @@ async function syncGoogleBody(userId: string, token: string, from: string, to: s
   return [...weights].map(([date, w]) => ({ date, ...w }))
 }
 
-const ROLLUP_TYPES = ["steps", "distance", "active-energy-burned", "daily-resting-heart-rate"] as const
+const ROLLUP_TYPES = ["steps", "distance", "active-energy-burned"] as const
 
 // Daily rollups in 30-day chunks, so a backfill of months stays within the API's range limits.
 // Throws only if every request failed (e.g. API disabled, bad scopes) so the error reaches last_error.
@@ -588,14 +594,16 @@ export async function syncGoogleHealth(userId: string, sub: string, days = 3) {
       }),
       ensureHealthUserId(userId, sub, token).catch(() => null),
     ])
-    const [steps, distance, active, resting] = ROLLUP_TYPES.map((t) => r0[t])
+    const [steps, distance, active] = ROLLUP_TYPES.map((t) => r0[t])
     for (const p of steps) set(p.date, "steps", firstNumber(p.value, /count|sum/i))
     for (const p of distance) {
       const v = firstNumber(p.value, /meters|millimeters|sum/i)
       set(p.date, "distance_m", v != null && /millimeters/i.test(JSON.stringify(p.value)) ? v / 1000 : v)
     }
     for (const p of active) set(p.date, "active_kcal", firstNumber(p.value, /kcal|kilocalories|sum/i))
-    for (const p of resting) set(p.date, "resting_hr", firstNumber(p.value, /beatsPerMinute|avg|min/i))
+    // Daily summaries have no rollup: list them by their date
+    const resting = await listPoints(token, "daily-resting-heart-rate", `daily_resting_heart_rate.date >= "${from}"`, 60).catch(() => [])
+    for (const p of resting) set(sampleDate(p, "dailyRestingHeartRate") ?? dailyDate(p.dailyRestingHeartRate), "resting_hr", firstNumber(p.dailyRestingHeartRate, /beatsPerMinute|bpm/i))
     const payload: IngestPayload = { source: "google_health", device: "Google Health", daily: [...byDate.values()] as IngestPayload["daily"], activities, weights }
     const r = await ingest(userId, payload)
     await markSynced(userId, "google", sub)
