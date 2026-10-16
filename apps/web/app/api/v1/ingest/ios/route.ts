@@ -8,7 +8,8 @@ export const maxDuration = 60
 // POST from the iOS Shortcut (see integrations/README.md → "Apple Health con un Atajo").
 // Shaped for what Shortcuts can build easily, in any locale:
 // { date?: "2026-10-16", steps, distance_km, active_kcal, resting_hr, hrv_ms, sleep_h, weight_kg,
-//   workouts: "Running;2026-10-16T19:43:00-03:00;3616;520;10.2\n…" }   (type;start;seconds;kcal;km per line)
+//   workouts: "Running;2026-10-16T19:43:00-03:00;2026-10-16T20:43:16-03:00;520;10.2\n…" }
+//   (type;start;end or seconds;kcal;km per line)
 // Numbers may come as "8,5" or "8.5" or "1.234,5"; empty or missing values are skipped.
 const num = (v: unknown): number | undefined => {
   if (typeof v === "number") return Number.isFinite(v) ? v : undefined
@@ -41,9 +42,11 @@ export const POST = apiRoute(async ({ uid, req }) => {
   const activities: NonNullable<IngestPayload["activities"]> = []
   const lines = Array.isArray(b.workouts) ? b.workouts.map(String) : String(b.workouts ?? "").split(/\r?\n/)
   for (const line of lines) {
-    const [type, start, secs, wkcal, wkm] = line.split(";").map((x) => x.trim())
+    const [type, start, endOrSecs, wkcal, wkm] = line.split(";").map((x) => x.trim())
     const startMs = Date.parse(start ?? "")
-    const dur = num(secs)
+    // Third field: the end date (what Shortcuts gives directly) or the duration in seconds
+    const endMs = /\d{4}-\d{2}-\d{2}/.test(endOrSecs ?? "") ? Date.parse(endOrSecs) : NaN
+    const dur = !Number.isNaN(endMs) ? (endMs - startMs) / 1000 : num(endOrSecs)
     if (!type || Number.isNaN(startMs) || !dur) continue
     activities.push({
       external_id: `ios-${startMs}`,
