@@ -1,7 +1,7 @@
 import AuthenticationServices
 import SwiftUI
 
-struct ContentView: View {
+struct SettingsView: View {
     @EnvironmentObject var sync: HealthSync
     @Environment(\.webAuthenticationSession) private var webAuth
     @State private var manualToken = ""

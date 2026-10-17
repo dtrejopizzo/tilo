@@ -11,8 +11,12 @@ struct TiloHealthApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                // Signed in and connected: the full app. Otherwise the setup screen.
+                if sync.token != nil && sync.healthConnected { TodayView() } else { SettingsView() }
+            }
                 .environmentObject(sync)
+                .preferredColorScheme(.dark)
                 .onOpenURL { url in sync.handleCallback(url) }
         }
     }

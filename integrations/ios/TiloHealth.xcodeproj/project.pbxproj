@@ -8,16 +8,22 @@
 
 /* Begin PBXBuildFile section */
 		02B5E401F31C642C4C19AA2D /* TiloHealthApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DCCEB2BF0D756622CEAC9E7 /* TiloHealthApp.swift */; };
+		22BE61E10E9DF74EBA34F831 /* API.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA1AF3070CD68FC68247FF46 /* API.swift */; };
+		7FFE75D30C37D5E23D517506 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3307E8AE1ECC77CA31E8F3 /* Models.swift */; };
 		93FEF5F078325815A45044F5 /* HealthSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E38F0C1E8EF088F068DF59F /* HealthSync.swift */; };
-		AB0408B1DDE3C143DC60F3B6 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF456BDFE302A0F841FE967D /* ContentView.swift */; };
+		BE3EAC4F82503CFC3305DAA3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E74CA35441C03004F79530CF /* SettingsView.swift */; };
+		C27078AA1A771659D0F40B73 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A885405EDCED44726312B9F /* TodayView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		0AF932D5EC2ED9DBAC8B935D /* TiloHealth.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TiloHealth.entitlements; sourceTree = "<group>"; };
+		3F3307E8AE1ECC77CA31E8F3 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		4DCCEB2BF0D756622CEAC9E7 /* TiloHealthApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiloHealthApp.swift; sourceTree = "<group>"; };
+		6A885405EDCED44726312B9F /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		7E38F0C1E8EF088F068DF59F /* HealthSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSync.swift; sourceTree = "<group>"; };
 		994E8C26983E7CA3043BA1A2 /* TiloHealth.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TiloHealth.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		EF456BDFE302A0F841FE967D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E74CA35441C03004F79530CF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		EA1AF3070CD68FC68247FF46 /* API.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = API.swift; sourceTree = "<group>"; };
 		F8C28B4D230D092DA0B3AC09 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -41,11 +47,14 @@
 		ECE182D5327EDDC52B7C119C /* TiloHealth */ = {
 			isa = PBXGroup;
 			children = (
-				EF456BDFE302A0F841FE967D /* ContentView.swift */,
+				EA1AF3070CD68FC68247FF46 /* API.swift */,
 				7E38F0C1E8EF088F068DF59F /* HealthSync.swift */,
 				F8C28B4D230D092DA0B3AC09 /* Info.plist */,
+				3F3307E8AE1ECC77CA31E8F3 /* Models.swift */,
+				E74CA35441C03004F79530CF /* SettingsView.swift */,
 				0AF932D5EC2ED9DBAC8B935D /* TiloHealth.entitlements */,
 				4DCCEB2BF0D756622CEAC9E7 /* TiloHealthApp.swift */,
+				6A885405EDCED44726312B9F /* TodayView.swift */,
 			);
 			path = TiloHealth;
 			sourceTree = "<group>";
@@ -108,9 +117,12 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AB0408B1DDE3C143DC60F3B6 /* ContentView.swift in Sources */,
+				22BE61E10E9DF74EBA34F831 /* API.swift in Sources */,
 				93FEF5F078325815A45044F5 /* HealthSync.swift in Sources */,
+				7FFE75D30C37D5E23D517506 /* Models.swift in Sources */,
+				BE3EAC4F82503CFC3305DAA3 /* SettingsView.swift in Sources */,
 				02B5E401F31C642C4C19AA2D /* TiloHealthApp.swift in Sources */,
+				C27078AA1A771659D0F40B73 /* TodayView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
