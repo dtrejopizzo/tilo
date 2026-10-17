@@ -1,0 +1,34 @@
+# Xcode project for the iPhone app. Generate it with `xcodegen` (brew install xcodegen), then open TiloHealth.xcodeproj.
+name: TiloHealth
+options:
+  bundleIdPrefix: com.dtrejopizzo
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  TiloHealth:
+    type: application
+    platform: iOS
+    sources: [TiloHealth]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dtrejopizzo.tilohealth
+        PRODUCT_NAME: Tilo
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: TiloHealth/TiloHealth.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Tilo
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "Tilo lee tus pasos, entrenamientos, sueño, frecuencia cardíaca y peso para mostrarlos en tu tablero y calcular tu gasto de energía."
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+    info:
+      path: TiloHealth/Info.plist
+      properties:
+        UIBackgroundModes: [fetch, processing]
+        BGTaskSchedulerPermittedIdentifiers: [com.dtrejopizzo.tilohealth.refresh]
+        CFBundleURLTypes:
+          - CFBundleURLName: com.dtrejopizzo.tilohealth
+            CFBundleURLSchemes: [tilohealth]
