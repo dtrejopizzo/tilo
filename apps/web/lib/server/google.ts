@@ -193,7 +193,14 @@ async function triageInbox(userId: string, token: string, accountEmail: string, 
   if (!inboxPersonal.length) return 0
   const db = supabaseAdmin()
   const { data: seen } = await db.from("email_insights").select("message_id").eq("user_id", userId).in("message_id", inboxPersonal.map((m) => m.id))
-  const fresh = inboxPersonal.filter((m) => !(seen ?? []).some((s) => s.message_id === m.id))
+  // Never a task: bounces, auto-replies and mail from one of the person's own connected accounts
+  const own = new Set((await listConnections("google", userId)).map((c) => (c.account_email ?? "").toLowerCase()))
+  const noise = (m: GmailMessage) => {
+    const from = header(m, "From").toLowerCase()
+    const addr = from.match(/<([^>]+)>/)?.[1] ?? from.trim()
+    return own.has(addr) || /mailer-daemon|postmaster|no-?reply|donotreply|mail delivery|delivery status/.test(from) || /^(undeliverable|undelivered|delivery status notification|returned mail|rejected:|automatic reply|respuesta automática|out of office|fuera de la oficina)/i.test(header(m, "Subject"))
+  }
+  const fresh = inboxPersonal.filter((m) => !(seen ?? []).some((s) => s.message_id === m.id) && !noise(m))
   if (!fresh.length) return 0
   const emails: EmailForTriage[] = fresh.map((m) => ({
     id: m.id, from: header(m, "From"), subject: header(m, "Subject"), snippet: m.snippet ?? "",
@@ -284,8 +291,9 @@ function replyText(payload: GmailPart | undefined): string {
 
 interface GmailPart { mimeType?: string; body?: { data?: string }; parts?: GmailPart[]; headers?: { name: string; value: string }[] }
 
-// Open tasks that came from a mail: if the person answered after that mail, close them. If the
-// answer promises more ("te lo mando mañana"), that promise becomes the next task on the thread.
+// Open tasks that came from a mail: close them when the person answered after that mail, or took
+// the thread out of the inbox (archived or deleted). If the answer promises more ("te lo mando
+// mañana"), that promise becomes the next task on the thread.
 async function closeAnsweredMailTasks(userId: string, token: string, accountEmail: string, today: string) {
   const db = supabaseAdmin()
   const { data: open } = await db.from("tasks").select("id, title, project_id, source_ref").eq("user_id", userId).eq("source", "email").eq("status", "todo")
@@ -296,9 +304,24 @@ async function closeAnsweredMailTasks(userId: string, token: string, accountEmai
   let closed = 0
   for (const t of mine) {
     const ref = t.source_ref as { thread_id: string; since?: number; from?: string; account?: string }
-    const thread = await gget<{ messages?: { id: string; labelIds?: string[]; internalDate?: string }[] }>(token, `${GMAIL}/threads/${ref.thread_id}?format=minimal`).catch(() => null)
-    const sent = (thread?.messages ?? []).filter((m) => (m.labelIds ?? []).includes("SENT") && Number(m.internalDate ?? 0) > (ref.since ?? 0)).at(-1)
-    if (!sent) continue
+    let gone = false
+    const thread = await gget<{ messages?: { id: string; labelIds?: string[]; internalDate?: string }[] }>(token, `${GMAIL}/threads/${ref.thread_id}?format=minimal`).catch((e) => {
+      gone = /: 404\b/.test(String(e)) // deleted for good
+      return null
+    })
+    const msgs = thread?.messages ?? []
+    const sent = msgs.filter((m) => (m.labelIds ?? []).includes("SENT") && Number(m.internalDate ?? 0) > (ref.since ?? 0)).at(-1)
+    if (!sent) {
+      // Archived (out of the inbox) or deleted without answering: the person dealt with it another way
+      const inInbox = msgs.some((m) => (m.labelIds ?? []).includes("INBOX"))
+      const trashed = msgs.length > 0 && msgs.every((m) => (m.labelIds ?? []).includes("TRASH"))
+      if (gone || trashed || (thread && !inInbox)) {
+        await db.from("tasks").update({ status: "done", completed_on: today }).eq("id", t.id).eq("user_id", userId)
+        await db.from("email_insights").update({ dismissed: true }).eq("user_id", userId).eq("task_id", t.id)
+        closed++
+      }
+      continue
+    }
 
     // Read what the person wrote and look for a promise before closing: if the AI is down for a
     // moment the task stays open and the next pass tries again, so no promise gets lost
@@ -333,6 +356,10 @@ async function closeAnsweredMailTasks(userId: string, token: string, accountEmai
 
 // The frequent pass (every 15 minutes): new personal mail → tasks, answered threads → done.
 // Much lighter than gmailSnapshot: one list of the last two days plus one request per open mail task.
+export async function closeMailTasks(userId: string, sub: string, accountEmail: string, today: string) {
+  return closeAnsweredMailTasks(userId, await googleToken(userId, sub), accountEmail, today)
+}
+
 export async function gmailInboxCheck(userId: string, sub: string, accountEmail: string, today: string) {
   const token = await googleToken(userId, sub)
   const ids = await listIds(token, "in:inbox -in:sent -in:chats newer_than:2d", 60)
