@@ -650,7 +650,7 @@ function useInsights(date: string) {
     tilo.request<Progress>("GET", `/insights?date=${date}`).then((r) => {
       progressCache.set(date, { at: Date.now(), p: r })
       if (alive) setP(r)
-    }).catch(() => {})
+    }).catch((e) => alive && setP({ goals: [], bullets: [], aiError: e instanceof Error ? e.message : "No pude leer tu semana." }))
     return () => {
       alive = false
     }
@@ -719,8 +719,13 @@ export function EnergyCard({ view, day, date }: CardProps) {
       {e.confidence === "low" && (
         <div className="reco"><Lightbulb aria-hidden="true" /><span>Conectá tu reloj o celular (Settings → Conexiones) y el gasto pasa a medirse con tus pasos y tu energía activa.</span></div>
       )}
-      {insights && insights.bullets.length > 0 && (
+      <div className="slot" style={{ paddingLeft: 10 }}>Tu semana</div>
+      {insights === null ? (
+        <div className="empty" style={{ paddingTop: 2 }}>Analizando tu semana…</div>
+      ) : insights.bullets.length > 0 ? (
         <ul className="insights" aria-label="Tu semana">{insights.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
+      ) : (
+        <div className="empty" style={{ paddingTop: 2 }}>{insights.aiError ?? "Todavía no hay datos suficientes para leer tu semana."}</div>
       )}
     </Card>
   )

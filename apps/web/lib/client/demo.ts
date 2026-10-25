@@ -421,6 +421,14 @@ async function handle(method: string, path: string, body: Record<string, unknown
   if (route === "/day") return buildDay(s, date)
   if (route === "/range") return buildRange(s, q.get("from")!, q.get("to")!)
   if (route === "/sync") return { synced: 0, failed: 0 }
+  if (route === "/insights") {
+    return { goals: [], aiError: null, bullets: [
+      "Bajaste 0,4 kg esta semana: a este ritmo llegás a 76 kg en unas 6 semanas.",
+      "Dormiste 6 h 56 contra 7 h 30 de objetivo; las noches cortas coinciden con los días de menos pasos.",
+      "Proteína en 128 g de promedio, por encima de los 120 g: bien para sostener la fuerza mientras bajás.",
+      "El agua quedó en 1,8 L contra 3 L; es lo más flojo de la semana.",
+    ] }
+  }
   if (route === "/calendar") {
     return { events: date === today ? [
       { id: "e1", title: "Daily standup", start: `${date}T13:00:00Z`, end: `${date}T13:15:00Z`, allDay: false, meetLink: "https://meet.google.com", account: "demo@gmail.com" },
