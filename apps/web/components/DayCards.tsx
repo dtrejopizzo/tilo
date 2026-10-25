@@ -641,6 +641,23 @@ interface Progress {
 }
 const progressCache = new Map<string, { at: number; p: Progress }>()
 
+function useInsights(date: string) {
+  const [p, setP] = useState<Progress | null>(() => progressCache.get(date)?.p ?? null)
+  useEffect(() => {
+    let alive = true
+    const hit = progressCache.get(date)
+    if (hit && Date.now() - hit.at < 5 * 60_000) return void setP(hit.p)
+    tilo.request<Progress>("GET", `/insights?date=${date}`).then((r) => {
+      progressCache.set(date, { at: Date.now(), p: r })
+      if (alive) setP(r)
+    }).catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [date])
+  return p
+}
+
 export function ProgressCard({ date }: CardProps) {
   const [p, setP] = useState<Progress | null>(() => progressCache.get(date)?.p ?? null)
   const [open, setOpen] = useState(true)
@@ -697,8 +714,9 @@ function SourceLogo({ source }: { source: string }) {
   return <svg viewBox="0 0 24 24" style={box} aria-label={source}><circle cx="12" cy="12" r="8" fill="var(--faint)" /></svg>
 }
 
-export function EnergyCard({ view, day }: CardProps) {
+export function EnergyCard({ view, day, date }: CardProps) {
   const e = view.energy
+  const insights = useInsights(date)
   const parts = [
     { cls: "e-bmr", v: e.bmr.kcal, label: "Basal", how: e.bmr.method },
     { cls: "e-neat", v: e.neat.kcal, label: "Movimiento", how: e.neat.method },
@@ -740,6 +758,9 @@ export function EnergyCard({ view, day }: CardProps) {
       </div>
       {e.confidence === "low" && (
         <div className="reco"><Lightbulb aria-hidden="true" /><span>Conectá tu reloj o celular (Settings → Conexiones) y el gasto pasa a medirse con tus pasos y tu energía activa.</span></div>
+      )}
+      {insights && insights.bullets.length > 0 && (
+        <ul className="insights" aria-label="Cómo vas esta semana">{insights.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
       )}
     </Card>
   )

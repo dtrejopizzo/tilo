@@ -217,7 +217,7 @@ export async function readProgress(userId: string, facts: Record<string, unknown
     userId,
     "insights",
     `You are a concise health and performance coach. From the person's last-7-day numbers (with the previous week for comparison) and their goals, write 3 or 4 observations in Rioplatense Spanish (vos), each one sentence, max 22 words.
-Connect data across areas when the numbers support it (sleep vs training, protein vs strength, calorie balance vs weight trend, meetings/tasks vs steps or sleep). Be specific with numbers. Lead with what matters most for their goals. If a datum is null, don't invent it; you may say it's missing only if it blocks a goal. No medical diagnoses, no generic advice, no emojis.
+Connect data across areas when the numbers support it (sleep vs training, protein vs strength, calorie balance vs weight trend, meetings/tasks vs steps or sleep). Be specific with numbers. strength_sessions_week counts gym/strength sessions recorded by the watch; logged_gym_sets_week only counts sets typed in Tilo, so 0 sets with strength sessions means "not logged", not "didn't train". Lead with what matters most for their goals. If a datum is null, don't invent it; you may say it's missing only if it blocks a goal. No medical diagnoses, no generic advice, no emojis.
 Today is ${today}. Return {"bullets": string[]}.`,
     JSON.stringify(facts),
   )
