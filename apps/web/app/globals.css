@@ -129,16 +129,7 @@ button.chip[aria-pressed="true"] { background: var(--leaf); color: #fff; }
 .pair .row { align-items: flex-start; }
 .pair .row .cbx { margin-top: 1px; }
 @media (max-width: 1280px) { .pair { grid-template-columns: minmax(0, 1fr); } }
-/* progress against goals */
-.prog { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; padding: 4px 6px 2px; }
-.pg { display: grid; gap: 1px; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); min-width: 0; }
-.pg .pl { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-.pg .pv { font: 600 13px var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pg .pv i { font-style: normal; color: var(--muted); }
-.pg .pv i.ok { color: var(--leaf); } .pg .pv i.bad { color: var(--danger); }
-.pg .pt, .pg .pn { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pg .pb { height: 3px; border-radius: 2px; background: var(--line); margin-top: 3px; }
-.pg .pb i { display: block; height: 3px; border-radius: 2px; }
+/* weekly AI reading inside the Energy card */
 .insights { margin: 6px 8px 4px; padding-left: 18px; display: grid; gap: 4px; font-size: 12.5px; line-height: 1.4; }
 .insights li::marker { color: var(--leaf); }
 /* energy: sessions of the day with where they came from */

@@ -632,7 +632,7 @@ export function TrainingCard({ date, day, view, mutate }: CardProps) {
 
 const SOURCE_LABEL: Record<string, string> = { apple: "Apple Health", google_health: "Google Health", health_connect: "Health Connect", strava: "Strava", garmin: "Garmin", manual: "manual" }
 
-// ---------- How you're doing against your goals ----------
+// ---------- Weekly reading (AI), shown inside the Energy card ----------
 
 interface Progress {
   goals: { key: string; label: string; value: string; target: string; ratio: number | null; trend: "up" | "down" | "flat" | null; good: boolean | null; note?: string }[]
@@ -656,46 +656,6 @@ function useInsights(date: string) {
     }
   }, [date])
   return p
-}
-
-export function ProgressCard({ date }: CardProps) {
-  const [p, setP] = useState<Progress | null>(() => progressCache.get(date)?.p ?? null)
-  const [open, setOpen] = useState(true)
-  useEffect(() => {
-    let alive = true
-    const hit = progressCache.get(date)
-    if (hit && Date.now() - hit.at < 5 * 60_000) return void setP(hit.p)
-    tilo.request<Progress>("GET", `/insights?date=${date}`).then((r) => {
-      progressCache.set(date, { at: Date.now(), p: r })
-      if (alive) setP(r)
-    }).catch(() => {})
-    return () => {
-      alive = false
-    }
-  }, [date])
-  if (!p) return null
-  const arrow = (t: string | null) => (t === "up" ? "↑" : t === "down" ? "↓" : t === "flat" ? "→" : "")
-  return (
-    <Card title="Cómo vas" meta="últimos 7 días vs. tus objetivos" actions={<button className="iconbtn" onClick={() => setOpen(!open)} aria-label={open ? "Plegar" : "Desplegar"}>{open ? "–" : "+"}</button>}>
-      {open && (
-        <>
-          <div className="prog">
-            {p.goals.map((g) => (
-              <div key={g.key} className="pg" title={g.note}>
-                <span className="pl">{g.label}</span>
-                <span className="pv">{g.value} <i className={g.good == null ? "" : g.good ? "ok" : "bad"}>{arrow(g.trend)}</i></span>
-                <span className="pt">{g.target}</span>
-                {g.ratio != null && <span className="pb"><i style={{ width: `${Math.min(100, g.ratio * 100)}%`, background: g.ratio >= 0.9 ? "var(--leaf)" : g.ratio >= 0.6 ? "var(--warn)" : "var(--danger)" }} /></span>}
-                {g.note && <span className="pn">{g.note}</span>}
-              </div>
-            ))}
-          </div>
-          {p.bullets.length > 0 && <ul className="insights">{p.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>}
-          {!p.bullets.length && p.aiError && <div className="empty" style={{ paddingTop: 2 }}>{p.aiError}</div>}
-        </>
-      )}
-    </Card>
-  )
 }
 
 const ACT_LABEL: Record<string, string> = {
@@ -760,7 +720,7 @@ export function EnergyCard({ view, day, date }: CardProps) {
         <div className="reco"><Lightbulb aria-hidden="true" /><span>Conectá tu reloj o celular (Settings → Conexiones) y el gasto pasa a medirse con tus pasos y tu energía activa.</span></div>
       )}
       {insights && insights.bullets.length > 0 && (
-        <ul className="insights" aria-label="Cómo vas esta semana">{insights.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
+        <ul className="insights" aria-label="Tu semana">{insights.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
       )}
     </Card>
   )
