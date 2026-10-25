@@ -21,6 +21,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: TiloHealth/TiloHealth.entitlements
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Tilo
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_NSHealthShareUsageDescription: "Tilo lee tus pasos, entrenamientos, sueño, frecuencia cardíaca y peso para mostrarlos en tu tablero y calcular tu gasto de energía."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait

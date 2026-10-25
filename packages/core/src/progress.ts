@@ -36,6 +36,7 @@ export function buildProgress(r: RangeData, today: string): ProgressReport {
   for (const m of r.metrics) metricsByDate.set(m.date, [...(metricsByDate.get(m.date) ?? []), m as DailyMetricRow])
   const metric = (d: string) => pickMetrics(metricsByDate.get(d) ?? []).values
 
+  const inLast14 = (d: string) => d > addDays(today, -14) && d <= today
   const series = (days: string[], f: (d: string) => number | null | undefined) => days.map(f).filter((v): v is number => v != null && Number.isFinite(v))
   const trendOf = (a: number | null, b: number | null, tol = 0.05) => (a == null || b == null || b === 0 ? null : a > b * (1 + tol) ? "up" : a < b * (1 - tol) ? "down" : "flat")
 
@@ -98,6 +99,7 @@ export function buildProgress(r: RangeData, today: string): ProgressReport {
   const hr = avg(series(done7, (d) => metric(d).resting_hr))
   const hrPrev = avg(series(prev7, (d) => metric(d).resting_hr))
   const hrv = avg(series(done7, (d) => metric(d).hrv_ms))
+  const irregular = r.metrics.filter((m) => inLast14(m.date)).reduce((s, m) => s + Number((m as { irregular_rhythm_events?: number | null }).irregular_rhythm_events ?? 0), 0)
   const tasks = avg(series(done7, (d) => sum.get(d)?.tasks_done ?? 0))
   const habitRate = (() => {
     const daily = r.habits.filter((h) => h.frequency === "daily")
@@ -116,7 +118,7 @@ export function buildProgress(r: RangeData, today: string): ProgressReport {
       water_avg_ml: water != null ? Math.round(water) : null, water_goal_ml: g.water_ml,
       steps_avg: steps != null ? Math.round(steps) : null, steps_goal: g.steps,
       sleep_avg_min: sleep != null ? Math.round(sleep) : null, sleep_goal_min: g.sleep_min,
-      resting_hr_avg: hr != null ? Math.round(hr) : null, resting_hr_prev: hrPrev != null ? Math.round(hrPrev) : null, hrv_avg_ms: hrv != null ? Math.round(hrv) : null,
+      resting_hr_avg: hr != null ? Math.round(hr) : null, resting_hr_prev: hrPrev != null ? Math.round(hrPrev) : null, hrv_avg_ms: hrv != null ? Math.round(hrv) : null, irregular_rhythm_notifications_14d: irregular,
       sessions_week: sessions.length, sessions_prev_week: sessionsPrev, sport_minutes_week: minutes, strength_sets_week: sets, sets_goal: g.weekly_sets_target,
       session_types: [...byType].map(([t, n]) => `${t}:${n}`).join(","),
       weight_kg: nowKg != null ? Math.round(nowKg * 10) / 10 : null, weight_change_week: perWeek != null ? Math.round(perWeek * 100) / 100 : null, weight_goal: g.weight_target_kg, weight_goal_date: g.weight_target_date,

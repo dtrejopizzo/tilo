@@ -1461,3 +1461,10 @@ create index email_insights_user_thread on public.email_insights (user_id, threa
 alter table public.meals drop constraint if exists meals_meal_type_check;
 alter table public.meals add constraint meals_meal_type_check
   check (meal_type in ('breakfast', 'morning_snack', 'lunch', 'merienda', 'afternoon_snack', 'dinner', 'snack'));
+
+-- ============================================================
+-- 20261025000001_irregular_rhythm.sql
+-- ============================================================
+
+-- Irregular heart rhythm notifications (possible atrial fibrillation) from Apple Health, per day
+alter table public.daily_metrics add column irregular_rhythm_events smallint check (irregular_rhythm_events >= 0);

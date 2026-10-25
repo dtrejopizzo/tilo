@@ -27,6 +27,7 @@ final class HealthSync: ObservableObject {
         let quantities: [HKQuantityTypeIdentifier] = [.stepCount, .distanceWalkingRunning, .activeEnergyBurned, .restingHeartRate, .heartRateVariabilitySDNN, .heartRate, .bodyMass, .distanceSwimming, .distanceCycling]
         var set = Set<HKObjectType>(quantities.map { HKQuantityType($0) })
         set.insert(HKCategoryType(.sleepAnalysis))
+        set.insert(HKCategoryType(.irregularHeartRhythmEvent))
         set.insert(HKWorkoutType.workoutType())
         return set
     }
@@ -158,6 +159,7 @@ final class HealthSync: ObservableObject {
             if let v = await stat(.restingHeartRate, .discreteAverage, start, end)?.averageQuantity()?.doubleValue(for: bpm) { d["resting_hr"] = v }
             if let v = await stat(.heartRateVariabilitySDNN, .discreteAverage, start, end)?.averageQuantity()?.doubleValue(for: .secondUnit(with: .milli)) { d["hrv_ms"] = v }
             if let v = await sleepMinutes(wakingOn: start) { d["sleep_min"] = v }
+            if let n = await irregularRhythm(start, end), n > 0 { d["irregular_rhythm_events"] = n }
             daily.append(d)
         }
         let from = cal.startOfDay(for: cal.date(byAdding: .day, value: -(days - 1), to: Date())!)
@@ -198,6 +200,12 @@ final class HealthSync: ObservableObject {
         }
         if let c = current { total += c.1.timeIntervalSince(c.0) }
         return total > 0 ? Int(total / 60) : nil
+    }
+
+    // Apple Watch irregular rhythm notifications (possible atrial fibrillation) that day
+    private func irregularRhythm(_ start: Date, _ end: Date) async -> Int? {
+        let predicate = HKSamplePredicate.categorySample(type: HKCategoryType(.irregularHeartRhythmEvent), predicate: HKQuery.predicateForSamples(withStart: start, end: end))
+        return try? await HKSampleQueryDescriptor(predicates: [predicate], sortDescriptors: []).result(for: store).count
     }
 
     private func workouts(from: Date) async -> [[String: Any]] {

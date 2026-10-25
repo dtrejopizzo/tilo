@@ -36,10 +36,15 @@ export async function ingest(userId: string, payload: IngestPayload): Promise<In
         user_id: userId, date: d.date, source: payload.source, device: payload.device ?? null,
         steps: n(d.steps), distance_m: n(d.distance_m, 1), active_kcal: n(d.active_kcal, 1), resting_kcal: n(d.resting_kcal, 1),
         resting_hr: n(d.resting_hr), hrv_ms: n(d.hrv_ms, 1), sleep_min: n(d.sleep_min), flights: n(d.flights),
+        ...(d.irregular_rhythm_events != null ? { irregular_rhythm_events: n(d.irregular_rhythm_events) } : {}),
         updated_at: new Date().toISOString(),
       }
     })
-    const { error } = await db.from("daily_metrics").upsert(rows, { onConflict: "user_id,date,source" })
+    let { error } = await db.from("daily_metrics").upsert(rows, { onConflict: "user_id,date,source" })
+    // A column added by a newer migration that isn't applied yet: keep the rest of the data
+    if (error && /irregular_rhythm_events/.test(error.message)) {
+      ;({ error } = await db.from("daily_metrics").upsert(rows.map(({ irregular_rhythm_events: _, ...r }) => r), { onConflict: "user_id,date,source" }))
+    }
     if (error) throw new Error(`daily_metrics: ${error.message}`)
   }
 

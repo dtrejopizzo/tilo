@@ -210,6 +210,7 @@ export interface DailyMetric {
   hrv_ms: number | null
   sleep_min: number | null
   flights: number | null
+  irregular_rhythm_events?: number | null // Apple Watch irregular rhythm notifications that day
 }
 
 export interface EnergyDay {

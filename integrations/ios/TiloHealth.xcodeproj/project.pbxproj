@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		02B5E401F31C642C4C19AA2D /* TiloHealthApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DCCEB2BF0D756622CEAC9E7 /* TiloHealthApp.swift */; };
 		22BE61E10E9DF74EBA34F831 /* API.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA1AF3070CD68FC68247FF46 /* API.swift */; };
+		54AD48683228608ABD9CA344 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9889932AD1A06701E1791A47 /* Assets.xcassets */; };
 		7FFE75D30C37D5E23D517506 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F3307E8AE1ECC77CA31E8F3 /* Models.swift */; };
 		93FEF5F078325815A45044F5 /* HealthSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E38F0C1E8EF088F068DF59F /* HealthSync.swift */; };
 		BE3EAC4F82503CFC3305DAA3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E74CA35441C03004F79530CF /* SettingsView.swift */; };
@@ -21,7 +22,8 @@
 		4DCCEB2BF0D756622CEAC9E7 /* TiloHealthApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiloHealthApp.swift; sourceTree = "<group>"; };
 		6A885405EDCED44726312B9F /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		7E38F0C1E8EF088F068DF59F /* HealthSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSync.swift; sourceTree = "<group>"; };
-		994E8C26983E7CA3043BA1A2 /* Tilo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tilo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9889932AD1A06701E1791A47 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		994E8C26983E7CA3043BA1A2 /* TiloHealth.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TiloHealth.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E74CA35441C03004F79530CF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		EA1AF3070CD68FC68247FF46 /* API.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = API.swift; sourceTree = "<group>"; };
 		F8C28B4D230D092DA0B3AC09 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -31,7 +33,7 @@
 		415D86B84FE00398A11CDB7E /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				994E8C26983E7CA3043BA1A2 /* Tilo.app */,
+				994E8C26983E7CA3043BA1A2 /* TiloHealth.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -48,6 +50,7 @@
 			isa = PBXGroup;
 			children = (
 				EA1AF3070CD68FC68247FF46 /* API.swift */,
+				9889932AD1A06701E1791A47 /* Assets.xcassets */,
 				7E38F0C1E8EF088F068DF59F /* HealthSync.swift */,
 				F8C28B4D230D092DA0B3AC09 /* Info.plist */,
 				3F3307E8AE1ECC77CA31E8F3 /* Models.swift */,
@@ -67,6 +70,7 @@
 			buildConfigurationList = FCC8C06FCC4868F828FD92FC /* Build configuration list for PBXNativeTarget "TiloHealth" */;
 			buildPhases = (
 				AF02A93D394A0B79C7361CC3 /* Sources */,
+				A83DDDED0BE39663962342E9 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -76,7 +80,7 @@
 			packageProductDependencies = (
 			);
 			productName = TiloHealth;
-			productReference = 994E8C26983E7CA3043BA1A2 /* Tilo.app */;
+			productReference = 994E8C26983E7CA3043BA1A2 /* TiloHealth.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -112,6 +116,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		A83DDDED0BE39663962342E9 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				54AD48683228608ABD9CA344 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		AF02A93D394A0B79C7361CC3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -137,7 +152,6 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 2M9P6Y2N5X;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TiloHealth/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Tilo;
@@ -284,7 +298,6 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 2M9P6Y2N5X;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TiloHealth/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Tilo;
