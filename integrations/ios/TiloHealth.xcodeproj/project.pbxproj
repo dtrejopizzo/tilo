@@ -21,7 +21,7 @@
 		4DCCEB2BF0D756622CEAC9E7 /* TiloHealthApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiloHealthApp.swift; sourceTree = "<group>"; };
 		6A885405EDCED44726312B9F /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		7E38F0C1E8EF088F068DF59F /* HealthSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSync.swift; sourceTree = "<group>"; };
-		994E8C26983E7CA3043BA1A2 /* TiloHealth.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TiloHealth.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		994E8C26983E7CA3043BA1A2 /* Tilo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Tilo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E74CA35441C03004F79530CF /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		EA1AF3070CD68FC68247FF46 /* API.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = API.swift; sourceTree = "<group>"; };
 		F8C28B4D230D092DA0B3AC09 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -31,7 +31,7 @@
 		415D86B84FE00398A11CDB7E /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				994E8C26983E7CA3043BA1A2 /* TiloHealth.app */,
+				994E8C26983E7CA3043BA1A2 /* Tilo.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,7 +76,7 @@
 			packageProductDependencies = (
 			);
 			productName = TiloHealth;
-			productReference = 994E8C26983E7CA3043BA1A2 /* TiloHealth.app */;
+			productReference = 994E8C26983E7CA3043BA1A2 /* Tilo.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -137,6 +137,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2M9P6Y2N5X;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TiloHealth/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Tilo;
@@ -283,6 +284,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2M9P6Y2N5X;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TiloHealth/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Tilo;

@@ -19,7 +19,8 @@
     "./mcp": "./src/mcp.ts",
     "./ingestFormats": "./src/ingestFormats.ts",
     "./achievements": "./src/achievements.ts",
-    "./streaks": "./src/streaks.ts"
+    "./streaks": "./src/streaks.ts",
+    "./progress": "./src/progress.ts"
   },
   "scripts": {
     "test": "vitest run",

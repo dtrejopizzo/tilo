@@ -97,7 +97,7 @@ export class TodayProvider implements vscode.TreeDataProvider<Node> {
         },
         {
           kind: "stat", id: "energy", label: "Balance", icon: "pulse", color: v.energy.balance < 0 ? "charts.green" : "charts.orange",
-          description: `${v.energy.balance > 0 ? "+" : "−"}${fmt(Math.abs(v.energy.balance))} kcal · gastaste ${fmt(v.energy.total)} (${v.energy.confidence === "high" ? "alta" : v.energy.confidence === "medium" ? "media" : "baja"})`,
+          description: `${v.energy.balance > 0 ? "+" : "−"}${fmt(Math.abs(v.energy.balance))} kcal · gastaste ${fmt(v.energy.total)}${v.energy.confidence === "high" ? " (medido)" : ""}`,
           tooltip: `Basal ${v.energy.bmr.kcal} (${v.energy.bmr.method})\nMovimiento ${v.energy.neat.kcal} (${v.energy.neat.method})\nEjercicio ${v.energy.exercise.kcal}\nDigestión ${v.energy.tef.kcal}`,
         },
         { kind: "stat", id: "steps", label: "Pasos", description: steps != null ? `${fmt(steps)} / ${fmt(v.stepsTarget)}` : "conectá un dispositivo", icon: "run" },

@@ -33,3 +33,6 @@ integrations/*/dist
 
 # macOS
 .DS_Store
+
+# Xcode per-user state
+xcuserdata/

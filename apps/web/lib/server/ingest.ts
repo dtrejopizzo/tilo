@@ -2,10 +2,11 @@
 // Accepts Tilo's own format (iOS Shortcut, Android companion, Strava sync) and the JSON that the
 // "Health Auto Export" iOS app posts, so iPhone users can sync with zero setup beyond pasting a URL.
 import type { IngestPayload, IngestResult, MetricSource } from "@tilo/core/apiTypes"
-import { dedupeActivities, normaliseActivityType, type ActivityLike } from "@tilo/core/sources"
+import { dedupeActivities, inferHabitActivityTypes, inferHabitMinMinutes, normaliseActivityType, type ActivityLike } from "@tilo/core/sources"
 export { fromHealthAutoExport } from "@tilo/core/ingestFormats"
 import { supabaseAdmin } from "../supabase/server"
-import { BadRequestError } from "./apiRoute"
+import { BadRequestError, PaymentRequiredError } from "./apiRoute"
+import { classifyHabit } from "./ai"
 import { ServerTiloApi } from "./tiloServer"
 
 export function localDateIn(iso: string, timezone: string): string {
@@ -62,6 +63,7 @@ export async function ingest(userId: string, payload: IngestPayload): Promise<In
     if (error) throw new Error(`activities: ${error.message}`)
   }
   const merged = await dedupeDates(userId, [...touched])
+  await autoCompleteHabits(userId, [...touched]).catch((e) => console.error("[habits] auto:", e))
 
   // Weights: replace this source's entry for the day
   let weights = 0
@@ -105,4 +107,55 @@ export async function dedupeDates(userId: string, dates: string[]): Promise<numb
     }
   }
   return changed
+}
+
+// Session types a habit can be completed by (normalised, see packages/core/src/sources.ts)
+const SESSION_TYPES = ["run", "walk", "hike", "ride", "swim", "strength", "hiit", "other", "yoga", "mobility", "tennis", "padel", "football", "golf", "rowing", "climbing", "boxing", "martial_arts", "dance", "surf", "ski", "elliptical", "basketball", "volleyball", "rugby", "hockey", "skate"]
+
+type HabitRule = { activity_types?: string[]; min_minutes?: number; inferred?: boolean } | null
+
+// Habits are completed by the day's sessions from any source: "Correr" by a run from Strava,
+// Apple Health or Google Health, "Entrenar" by a gym session, "Golf" by golf. Habits without a rule
+// get one inferred from their name (keywords, then the cheap AI model once) and stored in auto_rule,
+// which also lets the database trigger complete them as new sessions arrive.
+export async function autoCompleteHabits(userId: string, dates: string[]): Promise<number> {
+  if (!dates.length) return 0
+  const db = supabaseAdmin()
+  const { data: habits } = await db.from("habits").select("id, name, auto_rule").eq("user_id", userId).eq("archived", false)
+  const rules = new Map<string, { types: string[]; min: number }>()
+  for (const h of (habits ?? []) as { id: string; name: string; auto_rule: HabitRule }[]) {
+    let rule = h.auto_rule
+    if (!rule) {
+      let types = inferHabitActivityTypes(h.name)
+      if (!types) {
+        try {
+          types = await classifyHabit(userId, h.name, SESSION_TYPES)
+        } catch (e) {
+          if (!(e instanceof PaymentRequiredError)) console.error("[habits] classify:", e)
+          continue // try again next sync
+        }
+      }
+      rule = { activity_types: types, min_minutes: inferHabitMinMinutes(h.name), inferred: true }
+      await db.from("habits").update({ auto_rule: rule }).eq("id", h.id).eq("user_id", userId)
+    }
+    if (rule.activity_types?.length) rules.set(h.id, { types: rule.activity_types, min: rule.min_minutes ?? 0 })
+  }
+  if (!rules.size) return 0
+  const { data: acts } = await db
+    .from("activities")
+    .select("date, type, duration_s")
+    .eq("user_id", userId)
+    .in("date", dates)
+    .is("merged_into", null)
+  const logs: { habit_id: string; user_id: string; date: string; source: "auto" }[] = []
+  for (const a of (acts ?? []) as { date: string; type: string; duration_s: number }[]) {
+    for (const [habitId, r] of rules) {
+      if (r.types.includes(a.type) && a.duration_s >= r.min * 60) logs.push({ habit_id: habitId, user_id: userId, date: a.date, source: "auto" })
+    }
+  }
+  if (!logs.length) return 0
+  const unique = [...new Map(logs.map((l) => [`${l.habit_id}:${l.date}`, l])).values()]
+  const { error } = await db.from("habit_logs").upsert(unique, { onConflict: "habit_id,date", ignoreDuplicates: true })
+  if (error) throw new Error(`habit_logs: ${error.message}`)
+  return unique.length
 }

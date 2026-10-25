@@ -4,11 +4,15 @@ import { supabaseAdmin } from "../supabase/server"
 import { PaymentRequiredError } from "./apiRoute"
 import { decrypt } from "./crypto"
 
-// Tilo's own AI (Gemini, paid tier: user data is never used for training) is available during the
-// 7-day trial and on Pro, with a daily cap. Anyone can bring their own key (Gemini, OpenAI or
-// Anthropic), and MCP clients (Claude, ChatGPT, Copilot, Gemini CLI) use the user's own model for free.
+// Tilo's own AI goes through OpenRouter when OPENROUTER_API_KEY is set: a cheap model for the
+// everyday work (mail triage, follow-ups, habit matching, insights) and a stronger one for meal
+// macros, where accuracy is the product. Without it, Gemini directly. Anyone can bring their own
+// key (Gemini, OpenAI or Anthropic), and MCP clients use the user's own model for free.
 
-type Provider = "gemini" | "openai" | "anthropic"
+type Provider = "gemini" | "openai" | "anthropic" | "openrouter"
+
+// Features that deserve the better model; everything else uses the cheap one
+const QUALITY_FEATURES = new Set(["meal"])
 
 interface AiCredentials {
   provider: Provider
@@ -21,6 +25,7 @@ const DEFAULT_MODELS: Record<Provider, string> = {
   gemini: "gemini-3.8-flash",
   openai: "gpt-4.1-mini",
   anthropic: "claude-haiku-4-5-20251001",
+  openrouter: "anthropic/claude-haiku-5.5",
 }
 
 
@@ -41,8 +46,10 @@ async function credentialsFor(userId: string): Promise<AiCredentials> {
   const trialActive = profile?.plan === "trial" && Date.parse(profile.trial_ends_at) > Date.now()
   if (profile?.plan !== "pro" && !trialActive) throw new PaymentRequiredError(AI_UPSELL)
 
-  const key = env.geminiKey()
-  if (!key) throw new Error("GEMINI_API_KEY is not set")
+  const openrouter = env.openrouterKey()
+  const key = openrouter ?? env.geminiKey()
+  if (!key) throw new Error("OPENROUTER_API_KEY or GEMINI_API_KEY must be set")
+  const base = openrouter ? { provider: "openrouter" as const, apiKey: openrouter, model: env.aiModelCheap() } : { provider: "gemini" as const, apiKey: key, model: env.geminiModel() }
 
   const today = new Date().toISOString().slice(0, 10)
   if (profile?.plan === "pro") {
@@ -52,7 +59,7 @@ async function credentialsFor(userId: string): Promise<AiCredentials> {
     if (spent >= env.aiProMonthlyUsd()) {
       throw new PaymentRequiredError(`Llegaste al tope de IA de este mes (US$${env.aiProMonthlyUsd()}). Se renueva el 1°, o cargá tu propia API key en Settings → IA.`)
     }
-    return { provider: "gemini", apiKey: key, model: env.geminiModel(), own: false }
+    return { ...base, own: false }
   }
   const cap = env.aiFreeDailyRequests()
   const { data: usage } = await db.from("ai_usage").select("requests").eq("user_id", userId).eq("date", today)
@@ -60,7 +67,7 @@ async function credentialsFor(userId: string): Promise<AiCredentials> {
   if (used >= cap) {
     throw new PaymentRequiredError(`Llegaste al límite diario de IA de la prueba (${cap}). ${AI_UPSELL}`)
   }
-  return { provider: "gemini", apiKey: key, model: env.geminiModel(), own: false }
+  return { ...base, own: false }
 }
 
 async function meter(userId: string, feature: string, input: number, output: number) {
@@ -83,6 +90,7 @@ const GEMINI_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gem
 
 export async function generateJson<T>(userId: string, feature: string, system: string, prompt: string): Promise<T> {
   const creds = await credentialsFor(userId)
+  if (creds.provider === "openrouter" && QUALITY_FEATURES.has(feature)) creds.model = env.aiModelQuality()
   let text: string
   let inputTokens = 0
   let outputTokens = 0
@@ -105,10 +113,14 @@ export async function generateJson<T>(userId: string, feature: string, system: s
     text = res.text ?? ""
     inputTokens = res.usageMetadata?.promptTokenCount ?? 0
     outputTokens = res.usageMetadata?.candidatesTokenCount ?? 0
-  } else if (creds.provider === "openai") {
-    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  } else if (creds.provider === "openai" || creds.provider === "openrouter") {
+    const url = creds.provider === "openrouter" ? "https://openrouter.ai/api/v1/chat/completions" : "https://api.openai.com/v1/chat/completions"
+    const res = await fetch(url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${creds.apiKey}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${creds.apiKey}`, "Content-Type": "application/json",
+        ...(creds.provider === "openrouter" ? { "HTTP-Referer": env.appUrl(), "X-Title": "Tilo" } : {}),
+      },
       body: JSON.stringify({
         model: creds.model,
         temperature: 0,
@@ -117,7 +129,7 @@ export async function generateJson<T>(userId: string, feature: string, system: s
       }),
     })
     const data = await res.json()
-    if (!res.ok) throw new Error(`OpenAI: ${data.error?.message ?? res.status}`)
+    if (!res.ok) throw new Error(`${creds.provider === "openrouter" ? "OpenRouter" : "OpenAI"}: ${data.error?.message ?? res.status}`)
     text = data.choices?.[0]?.message?.content ?? ""
     inputTokens = data.usage?.prompt_tokens ?? 0
     outputTokens = data.usage?.completion_tokens ?? 0
@@ -195,6 +207,35 @@ export async function estimateMeal(userId: string, description: string, localTim
     meal_type: ["breakfast", "morning_snack", "lunch", "merienda", "afternoon_snack", "dinner", "snack"].includes(r.meal_type) ? r.meal_type : "snack",
     assumptions: typeof r.assumptions === "string" ? r.assumptions.slice(0, 300) : "",
   }
+}
+
+// ---------- Progress ----------
+
+// Three or four short observations a coach would make from the last two weeks, tied to the goals
+export async function readProgress(userId: string, facts: Record<string, unknown>, today: string): Promise<string[]> {
+  const r = await generateJson<{ bullets?: string[] }>(
+    userId,
+    "insights",
+    `You are a concise health and performance coach. From the person's last-7-day numbers (with the previous week for comparison) and their goals, write 3 or 4 observations in Rioplatense Spanish (vos), each one sentence, max 22 words.
+Connect data across areas when the numbers support it (sleep vs training, protein vs strength, calorie balance vs weight trend, meetings/tasks vs steps or sleep). Be specific with numbers. Lead with what matters most for their goals. If a datum is null, don't invent it; you may say it's missing only if it blocks a goal. No medical diagnoses, no generic advice, no emojis.
+Today is ${today}. Return {"bullets": string[]}.`,
+    JSON.stringify(facts),
+  )
+  return (r.bullets ?? []).filter((b) => typeof b === "string" && b.trim()).slice(0, 4).map((b) => b.trim().slice(0, 220))
+}
+
+// ---------- Habits ----------
+
+// For habit names the keyword rules don't recognise ("Jugar al squash con Juan", "Rutina de core"):
+// is it physical activity, and which session types count? Asked once per habit, cached in auto_rule.
+export async function classifyHabit(userId: string, name: string, types: string[]): Promise<string[]> {
+  const r = await generateJson<{ types?: string[] }>(
+    userId,
+    "habit",
+    `A person tracks the daily habit below. If doing it means a workout or sport session that a watch, Strava, Apple Health or Google Health would record, return which session types count, chosen ONLY from: ${types.join(", ")}. "other" is a generic gym workout. If it is not physical exercise (reading, meditating, studying, drinking water, sleeping), return an empty list. Return {"types": string[]}.`,
+    JSON.stringify({ habit: name }),
+  )
+  return (r.types ?? []).filter((t) => types.includes(t))
 }
 
 // ---------- Email ----------

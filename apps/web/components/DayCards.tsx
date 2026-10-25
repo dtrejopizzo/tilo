@@ -632,6 +632,71 @@ export function TrainingCard({ date, day, view, mutate }: CardProps) {
 
 const SOURCE_LABEL: Record<string, string> = { apple: "Apple Health", google_health: "Google Health", health_connect: "Health Connect", strava: "Strava", garmin: "Garmin", manual: "manual" }
 
+// ---------- How you're doing against your goals ----------
+
+interface Progress {
+  goals: { key: string; label: string; value: string; target: string; ratio: number | null; trend: "up" | "down" | "flat" | null; good: boolean | null; note?: string }[]
+  bullets: string[]
+  aiError: string | null
+}
+const progressCache = new Map<string, { at: number; p: Progress }>()
+
+export function ProgressCard({ date }: CardProps) {
+  const [p, setP] = useState<Progress | null>(() => progressCache.get(date)?.p ?? null)
+  const [open, setOpen] = useState(true)
+  useEffect(() => {
+    let alive = true
+    const hit = progressCache.get(date)
+    if (hit && Date.now() - hit.at < 5 * 60_000) return void setP(hit.p)
+    tilo.request<Progress>("GET", `/insights?date=${date}`).then((r) => {
+      progressCache.set(date, { at: Date.now(), p: r })
+      if (alive) setP(r)
+    }).catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [date])
+  if (!p) return null
+  const arrow = (t: string | null) => (t === "up" ? "↑" : t === "down" ? "↓" : t === "flat" ? "→" : "")
+  return (
+    <Card title="Cómo vas" meta="últimos 7 días vs. tus objetivos" actions={<button className="iconbtn" onClick={() => setOpen(!open)} aria-label={open ? "Plegar" : "Desplegar"}>{open ? "–" : "+"}</button>}>
+      {open && (
+        <>
+          <div className="prog">
+            {p.goals.map((g) => (
+              <div key={g.key} className="pg" title={g.note}>
+                <span className="pl">{g.label}</span>
+                <span className="pv">{g.value} <i className={g.good == null ? "" : g.good ? "ok" : "bad"}>{arrow(g.trend)}</i></span>
+                <span className="pt">{g.target}</span>
+                {g.ratio != null && <span className="pb"><i style={{ width: `${Math.min(100, g.ratio * 100)}%`, background: g.ratio >= 0.9 ? "var(--leaf)" : g.ratio >= 0.6 ? "var(--warn)" : "var(--danger)" }} /></span>}
+                {g.note && <span className="pn">{g.note}</span>}
+              </div>
+            ))}
+          </div>
+          {p.bullets.length > 0 && <ul className="insights">{p.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>}
+          {!p.bullets.length && p.aiError && <div className="empty" style={{ paddingTop: 2 }}>{p.aiError}</div>}
+        </>
+      )}
+    </Card>
+  )
+}
+
+const ACT_LABEL: Record<string, string> = {
+  run: "Correr", walk: "Caminar", hike: "Trekking", ride: "Bici", swim: "Natación", strength: "Fuerza", hiit: "HIIT", other: "Entrenamiento",
+  yoga: "Yoga", mobility: "Movilidad", tennis: "Tenis", padel: "Pádel", football: "Fútbol", golf: "Golf", rowing: "Remo", climbing: "Escalada",
+  boxing: "Box", dance: "Baile", surf: "Surf", ski: "Ski", elliptical: "Elíptico",
+}
+
+// Tiny marks so you can tell at a glance where a session came from
+function SourceLogo({ source }: { source: string }) {
+  const box = { width: 14, height: 14, flex: "none" as const }
+  if (source === "strava") return <svg viewBox="0 0 24 24" style={box} aria-label="Strava"><path fill="#fc4c02" d="M15.39 17.94l-2.09-4.12h-3.06L15.39 24l5.15-10.18h-3.07M10.46 0l-7 13.83h4.17l2.83-5.6 2.84 5.6h4.17z" /></svg>
+  if (source === "apple") return <svg viewBox="0 0 24 24" style={box} aria-label="Apple Health"><path fill="#ff2d55" d="M12 21.6l-1.45-1.32C5.4 15.6 2 12.5 2 8.7 2 5.6 4.4 3.2 7.5 3.2c1.74 0 3.41.81 4.5 2.09A6 6 0 0116.5 3.2C19.6 3.2 22 5.6 22 8.7c0 3.8-3.4 6.9-8.55 11.58z" /></svg>
+  if (source === "google_health" || source === "health_connect") return <svg viewBox="0 0 24 24" style={box} aria-label="Google Health"><path fill="#4285f4" d="M12 21.6l-1.45-1.32C5.4 15.6 2 12.5 2 8.7 2 5.6 4.4 3.2 7.5 3.2c1.74 0 3.41.81 4.5 2.09V21.6z" /><path fill="#34a853" d="M12 21.6V5.29A6 6 0 0116.5 3.2C19.6 3.2 22 5.6 22 8.7c0 3.8-3.4 6.9-8.55 11.58z" /></svg>
+  if (source === "garmin") return <svg viewBox="0 0 24 24" style={box} aria-label="Garmin"><path fill="#007cc3" d="M12 2L2 21h20z" /></svg>
+  return <svg viewBox="0 0 24 24" style={box} aria-label={source}><circle cx="12" cy="12" r="8" fill="var(--faint)" /></svg>
+}
+
 export function EnergyCard({ view, day }: CardProps) {
   const e = view.energy
   const parts = [
@@ -641,34 +706,41 @@ export function EnergyCard({ view, day }: CardProps) {
     { cls: "e-tef", v: e.tef.kcal, label: "Digestión", how: e.tef.method },
   ]
   const total = parts.reduce((s, p) => s + p.v, 0) || 1
-  const conf = { high: ["leaf", "confianza alta"], medium: ["warn", "confianza media"], low: ["red", "confianza baja"] }[e.confidence]
+  const how = e.confidence === "high" ? ["leaf", "medido por tu reloj"] : e.confidence === "medium" ? ["", "calculado con tus pasos"] : null
+  const kcalOf = new Map(e.exercise.sessions.map((x) => [x.id, x.kcal]))
   return (
-    <Card title="Energía" meta={<span className="mono">{fmt(e.total)} kcal gastadas</span>} actions={<span className={`pill ${conf[0]}`}>{conf[1]}</span>}>
+    <Card title="Energía" meta={<span className="mono">{fmt(e.total)} kcal gastadas</span>} actions={how ? <span className={`pill ${how[0]}`}>{how[1]}</span> : undefined}>
       <div className="energy-bar" role="img" aria-label={parts.map((p) => `${p.label} ${p.v} kcal`).join(", ")}>
         {parts.map((p) => <i key={p.cls} className={p.cls} style={{ width: `${(p.v / total) * 100}%` }} title={`${p.label}: ${p.how}`}>{p.v / total > 0.12 ? fmt(p.v) : ""}</i>)}
       </div>
       <div className="legend">
         {parts.map((p) => <span key={p.cls} title={p.how}><i className={p.cls} />{p.label} <b>{fmt(p.v)}</b></span>)}
       </div>
+      {day.activities.length > 0 && (
+        <div className="acts">
+          {day.activities.map((a) => (
+            <div key={a.id} className="act" title={`${SOURCE_LABEL[a.source] ?? a.source}${a.device ? ` · ${a.device}` : ""}`}>
+              <SourceLogo source={a.source} />
+              <span className="an">{a.name || ACT_LABEL[a.type] || a.type}</span>
+              <span className="ad">{new Date(a.start_at).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}</span>
+              <span className="ad">{Math.round(a.duration_s / 60)} min</span>
+              <span className="ad">{a.distance_m ? `${(Number(a.distance_m) / 1000).toFixed(1)} km` : ""}</span>
+              <span className="ak">{kcalOf.has(a.id) ? `${fmt(kcalOf.get(a.id)!)} kcal` : ""}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="src">
         <span className="chip">{e.bmr.method}</span>
         <span className="chip">{e.neat.method}</span>
-        {e.exercise.sessions.map((s) => <span key={s.id} className="chip">{s.kcal} kcal · {s.method}</span>)}
         {e.calibration !== 1 && <span className="chip">calibrado {e.calibration > 1 ? "+" : ""}{Math.round((e.calibration - 1) * 100)}% con tu peso real</span>}
         {Object.entries(view.metrics.sources).filter(([k]) => k === "steps" || k === "active_kcal").map(([k, s]) => (
           <span key={k} className="chip">{k === "steps" ? "pasos" : "energía activa"}: {SOURCE_LABEL[s!] ?? s}</span>
         ))}
       </div>
-      {e.confidence === "low" && (() => {
-        const movement = view.metrics.values.steps != null || view.metrics.values.active_kcal != null
-        const meals = day.meals.length > 0
-        const text = !movement && !meals
-          ? "Sin datos de movimiento ni comidas el cálculo es aproximado. Conectá tu reloj o celular y registrá lo que comés para que sea exacto."
-          : !meals
-            ? "Tu movimiento ya llega. Registrá lo que comés (arriba, o con una foto o texto) para que el balance sea exacto."
-            : "Sin datos de movimiento el gasto es una estimación. Conectá tu reloj o celular en Settings → Conexiones."
-        return <div className="reco warn"><Lightbulb aria-hidden="true" /><span>{text}</span></div>
-      })()}
+      {e.confidence === "low" && (
+        <div className="reco"><Lightbulb aria-hidden="true" /><span>Conectá tu reloj o celular (Settings → Conexiones) y el gasto pasa a medirse con tus pasos y tu energía activa.</span></div>
+      )}
     </Card>
   )
 }

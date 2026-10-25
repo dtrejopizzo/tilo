@@ -161,7 +161,9 @@ describe("sources", () => {
   it("normalises provider activity types", () => {
     expect(normaliseActivityType("TrailRun")).toBe("run")
     expect(normaliseActivityType("HKWorkoutActivityTypeTraditionalStrengthTraining".replace("HKWorkoutActivityType", ""))).toBe("strength")
-    expect(normaliseActivityType("Kitesurf")).toBe("other")
+    expect(normaliseActivityType("Kitesurf")).toBe("surf")
+    expect(normaliseActivityType("Golf")).toBe("golf")
+    expect(normaliseActivityType("Underwater basket weaving")).toBe("other")
     expect(normaliseActivityType("Outdoor Run")).toBe("run")
     expect(normaliseActivityType("Traditional Strength Training")).toBe("strength")
     expect(normaliseActivityType("High Intensity Interval Training")).toBe("hiit")
@@ -271,5 +273,17 @@ describe("Health Auto Export format", () => {
     expect(p.daily).toEqual([{ date: "2026-10-08", steps: 8432, active_kcal: 500, resting_hr: 55, sleep_min: 426 }])
     expect(p.weights).toEqual([{ date: "2026-10-08", kg: 78.6, body_fat_pct: 15 }])
     expect(p.activities?.[0]).toMatchObject({ type: "Outdoor Run", start_at: "2026-10-08T07:10:00-03:00", duration_s: 2040, distance_m: 6200, kcal: 410, kcal_is_net: true, avg_hr: 151 })
+  })
+})
+
+describe("habits completed by activities", () => {
+  it("reads the session types from the habit name", async () => {
+    const { inferHabitActivityTypes, inferHabitMinMinutes } = await import("./sources")
+    expect(inferHabitActivityTypes("Correr")).toEqual(["run"])
+    expect(inferHabitActivityTypes("Nadar")).toEqual(["swim"])
+    expect(inferHabitActivityTypes("Entrenar fuerza")).toEqual(["strength", "hiit", "other"])
+    expect(inferHabitActivityTypes("Jugar al golf")).toEqual(["golf"])
+    expect(inferHabitActivityTypes("Leer 20 min")).toBeNull()
+    expect(inferHabitMinMinutes("Caminar 30 min")).toBe(30)
   })
 })

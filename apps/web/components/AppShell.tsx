@@ -140,6 +140,18 @@ function TopBar({ user }: { user: { name: string; avatar: string | null } }) {
         <Dumbbell /><span>{openWorkout ? "Continuar entreno" : "Entrenar"}</span>
       </button>
       <span className="sync"><i className={syncState === "ok" ? "" : "off"} />{syncState === "syncing" ? "sincronizando…" : syncState === "ok" ? "al día" : "sin conexiones"}</span>
+      <button
+        className="iconbtn"
+        onClick={() => {
+          const next: Theme = theme === "system" ? "light" : theme === "light" ? "dark" : "system"
+          setTheme(next)
+          applyTheme(next)
+        }}
+        aria-label={`Tema: ${theme === "system" ? "sistema" : theme === "light" ? "claro" : "oscuro"} (click para cambiar)`}
+        title={`Tema: ${theme === "system" ? "sistema" : theme === "light" ? "claro" : "oscuro"}`}
+      >
+        {theme === "light" ? <Sun /> : theme === "dark" ? <Moon /> : <Monitor />}
+      </button>
       <button className="iconbtn" onClick={() => setSettings("goals")} aria-label="Settings (,)"><SettingsIcon /></button>
       <div style={{ position: "relative" }}>
         <button className="avatar" onClick={() => setMenu(!menu)} aria-label="Cuenta" aria-expanded={menu}>

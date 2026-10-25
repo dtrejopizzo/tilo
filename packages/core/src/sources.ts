@@ -120,10 +120,22 @@ const TYPE_MAP: Record<string, string> = {
   strengthtraining: "strength", crossfit: "hiit", highintensityintervaltraining: "hiit", hiit: "hiit", workout: "other",
   tennis: "tennis", padel: "padel", pickleball: "tennis", soccer: "football", football: "football",
   yoga: "yoga", pilates: "yoga", rowing: "rowing", rowingmachine: "rowing", elliptical: "elliptical", stairstepper: "other",
+  golf: "golf", climbing: "climbing", rockclimbing: "climbing", bouldering: "climbing", boxing: "boxing", kickboxing: "boxing",
+  martialarts: "martial_arts", dance: "dance", dancing: "dance", skiing: "ski", alpineski: "ski", nordicski: "ski", snowboard: "ski",
+  surfing: "surf", surf: "surf", kitesurf: "surf", windsurf: "surf", standuppaddling: "surf", basketball: "basketball",
+  volleyball: "volleyball", rugby: "rugby", hockey: "hockey", squash: "tennis", badminton: "tennis", tabletennis: "tennis",
+  skating: "skate", inlineskate: "skate", stretching: "mobility", flexibility: "mobility", mindandbody: "yoga", cooldown: "mobility",
+  coretraining: "strength", functionaltraining: "strength", weightlifting: "strength", gym: "strength", kayaking: "rowing", canoeing: "rowing",
 }
 
 // Keyword fallback for descriptive names ("Outdoor Run", "Traditional Strength Training", "Pool Swim")
 const KEYWORDS: [RegExp, string][] = [
+  [/golf/, "golf"],
+  [/climb|escalad|boulder/, "climbing"],
+  [/box|kickbox/, "boxing"],
+  [/surf|paddle/, "surf"],
+  [/ski|snowboard/, "ski"],
+  [/danc|baile/, "dance"],
   [/hiit|interval|crossfit/, "hiit"],
   [/strength|weight|gym|musculaci/, "strength"],
   [/trail|run|jog|treadmill|correr|carrera/, "run"],
@@ -144,4 +156,52 @@ export function normaliseActivityType(raw: string): string {
   if (exact) return exact
   const lower = raw.toLowerCase()
   return KEYWORDS.find(([re]) => re.test(lower))?.[1] ?? "other"
+}
+
+
+// ---------- Habits completed by activities ----------
+
+// Activity types (normalised, as above) that count for a habit, read from its name in Spanish or
+// English: "Correr" → run, "Entrenar fuerza" → strength, "Nadar" → swim, "Jugar al golf" → golf.
+// "Entrenar" alone counts any gym-like session (strength, HIIT, the generic "workout" Apple and
+// Google send for strength). Returns null when the name isn't about exercise ("Leer 20 min").
+const HABIT_PATTERNS: [RegExp, string[]][] = [
+  [/\b(corr(er|o|i)|running|run|trot(ar|e)|jogging|footing)\b/, ["run"]],
+  [/\b(nad(ar|o|e)|nataci[oó]n|swim(ming)?|pileta|piscina)\b/, ["swim"]],
+  [/\b(camin(ar|o|ata|e)|walk(ing)?|pasos)\b/, ["walk", "hike"]],
+  [/\b(trekking|hiking|hike|senderismo|monta[nñ]a)\b/, ["hike", "walk"]],
+  [/\b(bici(cleta)?|ciclismo|pedal(ear)?|spinning|cycling|ride|bike|mtb)\b/, ["ride"]],
+  [/\b(fuerza|pesas|gym|gimnasio|musculaci[oó]n|strength|weights?|lifting|hipertrofia|crossfit|funcional)\b/, ["strength", "hiit", "other"]],
+  // "Entrenar" means the gym, not a run or a swim (those have their own habits)
+  [/\b(entren(ar|o|amiento)|workout|training)\b/, ["strength", "hiit", "other"]],
+  // "Hacer ejercicio" / "deporte": any session counts
+  [/\b(ejercicio|deporte|actividad f[ií]sica|mover(me|se))\b/, ["strength", "hiit", "other", "run", "ride", "swim", "walk", "elliptical", "rowing", "tennis", "padel", "football", "golf", "yoga"]],
+  [/\b(hiit|intervalos)\b/, ["hiit"]],
+  [/\b(yoga|pilates|stretch(ing)?|elongar|elongaci[oó]n|movilidad|mobility)\b/, ["yoga", "mobility"]],
+  [/\b(golf)\b/, ["golf"]],
+  [/\b(tenis|tennis|squash|badminton|ping ?pong)\b/, ["tennis"]],
+  [/\b(p[aá]del|padel)\b/, ["padel", "tennis"]],
+  [/\b(f[uú]tbol|futbol|soccer|football|f[uú]tbol 5)\b/, ["football"]],
+  [/\b(remo|rowing|kayak)\b/, ["rowing"]],
+  [/\b(escalar|escalada|climb(ing)?|boulder)\b/, ["climbing"]],
+  [/\b(box(eo|ing)?|kickboxing|artes marciales|jiu ?jitsu|karate|judo|taekwondo|muay thai)\b/, ["boxing", "martial_arts"]],
+  [/\b(bail(ar|e)|danza|dance)\b/, ["dance"]],
+  [/\b(surf|kite|windsurf|sup)\b/, ["surf"]],
+  [/\b(esqu[ií](ar)?|ski(ing)?|snowboard)\b/, ["ski"]],
+  [/\b(el[ií]ptic[oa]|elliptical)\b/, ["elliptical"]],
+  [/\b(b[aá]squet|basket(ball)?|v[oó]ley|volley(ball)?|rugby|hockey)\b/, ["basketball", "volleyball", "rugby", "hockey"]],
+]
+
+export function inferHabitActivityTypes(name: string): string[] | null {
+  const n = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  const plain = name.toLowerCase()
+  const types = new Set<string>()
+  for (const [re, t] of HABIT_PATTERNS) if (re.test(n) || re.test(plain)) t.forEach((x) => types.add(x))
+  return types.size ? [...types] : null
+}
+
+// Minutes a session needs to count, from "Correr 30 min", "caminar 10.000 pasos" (ignored) or a default
+export function inferHabitMinMinutes(name: string): number {
+  const m = name.toLowerCase().match(/(\d{1,3})\s*(min|minutos|')\b/)
+  return m ? Math.min(240, Number(m[1])) : 10
 }

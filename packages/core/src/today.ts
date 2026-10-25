@@ -82,7 +82,7 @@ export function buildChecklist(habits: Habit[], supplements: Supplement[]): Chec
   for (const h of habits) {
     push(habitSlot(h), {
       kind: "habit", id: h.id, name: h.name, done: h.done, auto: h.auto, lowStock: false,
-      detail: h.frequency === "weekly" ? `${h.week_count}/${h.per_week} esta semana` : h.auto_rule ? "auto" : "hábito",
+      detail: h.frequency === "weekly" ? `${h.week_count}/${h.per_week} esta semana` : h.auto_rule?.activity_types?.length ? "auto" : "hábito",
     })
   }
   for (const s of supplements) {
@@ -140,7 +140,9 @@ export function buildToday(day: DayData, opts: { priority?: Source[]; pinned?: P
     ...day.activities.map((a) => ({
       id: a.id, type: a.type, durationS: a.duration_s, kcal: a.kcal, kcalIsNet: a.source === "apple" || a.source === "health_connect" || a.source === "google_health",
       avgHr: a.avg_hr, steps: a.steps, distanceM: a.distance_m,
-      coveredByActiveEnergy: activeSource != null && a.source === activeSource,
+      // Active energy from a wearable already contains every session recorded that day, whichever app
+      // reported the session (Strava, Apple Health, Google Health): don't add it twice
+      coveredByActiveEnergy: activeSource != null && a.source !== "manual",
     })),
     ...day.workouts
       .filter((w) => !w.activity_id && w.ended_at)

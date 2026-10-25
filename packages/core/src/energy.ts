@@ -170,8 +170,8 @@ export function computeDayEnergy(profile: EnergyProfile, input: DayEnergyInput):
   const total = (Math.round(base.kcal) + Math.round(neat.kcal) + Math.round(exerciseKcal) + Math.round(tefTerm.kcal)) * calibration
   const intake = input.intake?.kcal ?? 0
 
-  const confidence: DayEnergy["confidence"] =
-    movementData === "measured" && input.intake ? "high" : movementData !== "none" && input.intake ? "medium" : "low"
+  // How the expenditure was obtained. Meals don't change what was burned, so they don't count here.
+  const confidence: DayEnergy["confidence"] = movementData === "measured" ? "high" : movementData === "steps" ? "medium" : "low"
 
   const round = (t: EnergyTerm) => ({ ...t, kcal: Math.round(t.kcal) })
   return {
