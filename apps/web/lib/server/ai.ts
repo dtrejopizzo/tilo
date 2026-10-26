@@ -244,6 +244,7 @@ How to choose:
 1. Start from TODAY (today_* fields, last night's sleep, sessions done, habits pending, water and protein so far) and say what's left and what to do about it given the time of day (e.g. at 18:00 with 900 ml of 2800, that's the priority; if they already trained, acknowledge it and point to recovery/protein).
 2. Then the 7-day trend that most affects their main goal (weight goal and date first, then strength, sleep, steps), with concrete numbers. Explain cause and effect when the data supports it (short sleep and higher resting HR, no meals logged so the deficit is unknown, protein vs strength sessions).
 3. Never repeat a line from the previous panorama below unless the situation is the same and still the top priority; rephrase and update the numbers.
+schedule_rest_of_today lists what's left on their calendar: real meetings and their own routine blocks (training, swimming, dinner, learning, walking the dog). Use it to time the advice ("antes de Running a las 17:30, tomá agua"), never call routine blocks "reuniones", and don't count events.
 Rules: use only the numbers given, never invent; null means unknown. Round naturally (hours and minutes for sleep, liters for water). No medical diagnoses, no emojis, no generic advice. strength_sessions_week counts gym sessions from the watch; logged_gym_sets_week only sets typed in Tilo.
 Return {"bullets": string[]}.`,
     JSON.stringify({ facts, previous_panorama: previous }),

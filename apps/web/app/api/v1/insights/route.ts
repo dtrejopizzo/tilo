@@ -36,11 +36,17 @@ export const GET = apiRoute(async ({ uid, req }) => {
   if (stale || req.nextUrl.searchParams.get("refresh") === "1") {
     const tz = profile?.timezone ?? "America/Argentina/Buenos_Aires"
     const localTime = new Intl.DateTimeFormat("es-AR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date())
-    // Real meetings: not all-day blocks, not the recurring ones the person hid (sleep, training)
+    // What's left on today's calendar, once (the same event can sit in two accounts), without
+    // all-day blocks or the ones the person hid. Mixes meetings and personal routine blocks.
     const hidden = ((data.hidden_events as string[] | undefined) ?? []).map((h) => h.trim().toLowerCase())
-    const meetings = await calendarEvents(uid, today, tz).then((e) => e.filter((x) => !x.allDay && !hidden.includes(x.title.trim().toLowerCase())).length).catch(() => null)
+    const hhmm = (iso: string) => new Intl.DateTimeFormat("es-AR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso))
+    const schedule = await calendarEvents(uid, today, tz)
+      .then((events) => [...new Map(events
+        .filter((x) => !x.allDay && !hidden.includes(x.title.trim().toLowerCase()) && Date.parse(x.end) > Date.now())
+        .map((x) => [`${x.title.trim().toLowerCase()}|${x.start}`, `${hhmm(x.start)} ${x.title.trim()}`])).values()])
+      .catch(() => null)
     try {
-      bullets = await readProgress(uid, { ...report.facts, meetings_today: meetings, sex: profile?.sex ?? null }, today, localTime, cached?.bullets ?? [])
+      bullets = await readProgress(uid, { ...report.facts, schedule_rest_of_today: schedule, sex: profile?.sex ?? null }, today, localTime, cached?.bullets ?? [])
       await db.from("settings").upsert({ user_id: uid, data: { ...data, insights_cache: { date: today, at: Date.now(), bullets, fp } }, updated_at: new Date().toISOString() })
     } catch (e) {
       aiError = e instanceof PaymentRequiredError ? e.message : "No pude generar el panorama ahora."
