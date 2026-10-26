@@ -200,7 +200,8 @@ final class HealthSync: ObservableObject {
             "activities": await workouts(from: from),
         ]
         if let w = await latestWeight(from: from) { payload["weights"] = [w] }
-        payload["diagnostics"] = ["wakes": UserDefaults.standard.stringArray(forKey: "wakes") ?? [], "app": "ios 1.1"]
+        let found = (payload["activities"] as? [[String: Any]] ?? []).map { "\($0["type"] ?? "?") \($0["start_at"] ?? "?")" }
+        payload["diagnostics"] = ["wakes": UserDefaults.standard.stringArray(forKey: "wakes") ?? [], "app": "ios 1.2", "workouts_found": found, "workouts_error": lastWorkoutError ?? "", "last_result": lastResult]
         return payload
     }
 
@@ -238,9 +239,18 @@ final class HealthSync: ObservableObject {
         return try? await HKSampleQueryDescriptor(predicates: [predicate], sortDescriptors: []).result(for: store).count
     }
 
+    private var lastWorkoutError: String?
+
     private func workouts(from: Date) async -> [[String: Any]] {
-        let predicate = HKSamplePredicate.workout(HKQuery.predicateForSamples(withStart: from, end: Date()))
-        guard let list = try? await HKSampleQueryDescriptor(predicates: [predicate], sortDescriptors: [SortDescriptor(\.startDate)]).result(for: store) else { return [] }
+        let predicate = HKSamplePredicate.workout(HKQuery.predicateForSamples(withStart: from, end: nil))
+        let list: [HKWorkout]
+        do {
+            list = try await HKSampleQueryDescriptor(predicates: [predicate], sortDescriptors: [SortDescriptor(\.startDate)]).result(for: store)
+            lastWorkoutError = nil
+        } catch {
+            lastWorkoutError = error.localizedDescription
+            return []
+        }
         let iso = ISO8601DateFormatter()
         return list.map { w in
             var a: [String: Any] = [

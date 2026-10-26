@@ -22,5 +22,20 @@ export const POST = apiRoute(async ({ uid, req }) => {
     const { data } = await db.from("settings").select("data").eq("user_id", uid).maybeSingle()
     await db.from("settings").upsert({ user_id: uid, data: { ...((data?.data as object) ?? {}), ios_diagnostics: { ...diag, received_at: new Date().toISOString() } }, updated_at: new Date().toISOString() })
   }
-  return ingest(uid, payload)
+  try {
+    const r = await ingest(uid, payload)
+    if (diag) await noteResult(uid, { ok: r })
+    return r
+  } catch (e) {
+    if (diag) await noteResult(uid, { error: String(e).slice(0, 400) })
+    throw e
+  }
 })
+
+// What the server did with the phone's last sync, next to the phone's own diagnostics
+async function noteResult(uid: string, result: Record<string, unknown>) {
+  const db = supabaseAdmin()
+  const { data } = await db.from("settings").select("data").eq("user_id", uid).maybeSingle()
+  const d = (data?.data ?? {}) as Record<string, unknown>
+  await db.from("settings").upsert({ user_id: uid, data: { ...d, ios_diagnostics: { ...((d.ios_diagnostics as object) ?? {}), server: result } }, updated_at: new Date().toISOString() })
+}
