@@ -57,6 +57,13 @@ export async function ingest(userId: string, payload: IngestPayload): Promise<In
     if (error) throw new Error(`daily_metrics: ${error.message}`)
   }
 
+  // Sessions the phone detected from raw samples ("inferred-…"): each sync sends the current list
+  // for its days, so drop the previous ones first
+  const inferredDates = (payload as { inferred_dates?: string[] }).inferred_dates ?? []
+  if (inferredDates.length) {
+    await db.from("activities").delete().eq("user_id", userId).eq("source", payload.source).like("external_id", "inferred-%").in("date", inferredDates)
+  }
+
   // Activities
   const acts = payload.activities ?? []
   if (acts.length) {
@@ -76,6 +83,7 @@ export async function ingest(userId: string, payload: IngestPayload): Promise<In
     const { error } = await db.from("activities").upsert(rows, { onConflict: "user_id,source,external_id" })
     if (error) throw new Error(`activities: ${error.message}`)
   }
+  await dropInferredCoveredByReal(userId, [...touched])
   const merged = await dedupeDates(userId, [...touched])
   await autoCompleteHabits(userId, [...touched]).catch((e) => console.error("[habits] auto:", e))
 
@@ -172,4 +180,18 @@ export async function autoCompleteHabits(userId: string, dates: string[]): Promi
   const { error } = await db.from("habit_logs").upsert(unique, { onConflict: "habit_id,date", ignoreDuplicates: true })
   if (error) throw new Error(`habit_logs: ${error.message}`)
   return unique.length
+}
+
+// A detected session gives way to the real workout (from any source) that covers the same time
+async function dropInferredCoveredByReal(userId: string, dates: string[]) {
+  if (!dates.length) return
+  const db = supabaseAdmin()
+  const { data } = await db.from("activities").select("id, external_id, start_at, end_at").eq("user_id", userId).in("date", dates)
+  const rows = (data ?? []) as { id: string; external_id: string; start_at: string; end_at: string }[]
+  const real = rows.filter((r) => !r.external_id.startsWith("inferred-"))
+  const covered = rows
+    .filter((r) => r.external_id.startsWith("inferred-"))
+    .filter((r) => real.some((x) => Date.parse(x.start_at) < Date.parse(r.end_at) && Date.parse(r.start_at) < Date.parse(x.end_at)))
+    .map((r) => r.id)
+  if (covered.length) await db.from("activities").delete().in("id", covered).eq("user_id", userId)
 }

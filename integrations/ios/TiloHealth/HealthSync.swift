@@ -34,7 +34,7 @@ final class HealthSync: ObservableObject {
 
     private let bpm = HKUnit.count().unitDivided(by: .minute())
     private var readTypes: Set<HKObjectType> {
-        let quantities: [HKQuantityTypeIdentifier] = [.stepCount, .distanceWalkingRunning, .activeEnergyBurned, .restingHeartRate, .heartRateVariabilitySDNN, .heartRate, .bodyMass, .distanceSwimming, .distanceCycling]
+        let quantities: [HKQuantityTypeIdentifier] = [.stepCount, .distanceWalkingRunning, .activeEnergyBurned, .restingHeartRate, .heartRateVariabilitySDNN, .heartRate, .bodyMass, .distanceSwimming, .distanceCycling, .swimmingStrokeCount]
         var set = Set<HKObjectType>(quantities.map { HKQuantityType($0) })
         set.insert(HKCategoryType(.sleepAnalysis))
         set.insert(HKCategoryType(.irregularHeartRhythmEvent))
@@ -43,7 +43,7 @@ final class HealthSync: ObservableObject {
     }
     // What wakes the app up in the background
     private var observedTypes: [HKSampleType] {
-        [HKWorkoutType.workoutType(), HKQuantityType(.stepCount), HKQuantityType(.activeEnergyBurned), HKCategoryType(.sleepAnalysis), HKQuantityType(.restingHeartRate), HKQuantityType(.bodyMass)]
+        [HKWorkoutType.workoutType(), HKQuantityType(.stepCount), HKQuantityType(.activeEnergyBurned), HKCategoryType(.sleepAnalysis), HKQuantityType(.restingHeartRate), HKQuantityType(.bodyMass), HKQuantityType(.distanceSwimming), HKQuantityType(.heartRate)]
     }
 
     // MARK: - Sign in
@@ -192,12 +192,16 @@ final class HealthSync: ObservableObject {
             daily.append(d)
         }
         let from = cal.startOfDay(for: cal.date(byAdding: .day, value: -(days - 1), to: Date())!)
+        let real = await workouts(from: from)
+        let detected = await detectedSessions(from: from, excluding: real)
         var payload: [String: Any] = [
             "source": "apple",
             "device": "Apple Health",
             "timezone": TimeZone.current.identifier,
             "daily": daily,
-            "activities": await workouts(from: from),
+            "activities": real + detected,
+            // The server replaces the sessions it detected before on these days with this list
+            "inferred_dates": daily.compactMap { $0["date"] },
         ]
         if let w = await latestWeight(from: from) { payload["weights"] = [w] }
         let found = (payload["activities"] as? [[String: Any]] ?? []).map { "\($0["type"] ?? "?") \($0["start_at"] ?? "?")" }
@@ -274,6 +278,96 @@ final class HealthSync: ObservableObject {
             a["name"] = app.lowercased().contains("strava") || app.lowercased().contains("entreno") || app.lowercased().contains("workout") ? nil : app
             return a
         }
+    }
+
+    // MARK: - Sessions detected from raw samples
+
+    // Strava's watch app writes the workout to Health only hours later, but the samples it records
+    // (heart rate every few seconds, swim distance, energy) land at once. A stretch of dense, high
+    // heart rate is a session; its distance says which: swim distance → swim, fast walking/running
+    // distance → run, slow → walk, none → a gym session. Replaced on the server when the real
+    // workout arrives.
+    private func samples(_ id: HKQuantityTypeIdentifier, from: Date) async -> [HKQuantitySample] {
+        let predicate = HKSamplePredicate.quantitySample(type: HKQuantityType(id), predicate: HKQuery.predicateForSamples(withStart: from, end: nil))
+        return (try? await HKSampleQueryDescriptor(predicates: [predicate], sortDescriptors: [SortDescriptor(\.startDate)]).result(for: store)) ?? []
+    }
+
+    private func detectedSessions(from: Date, excluding real: [[String: Any]]) async -> [[String: Any]] {
+        let iso = ISO8601DateFormatter()
+        let realSpans: [(Date, Date)] = real.compactMap { a in
+            guard let s = (a["start_at"] as? String).flatMap(iso.date), let e = (a["end_at"] as? String).flatMap(iso.date) else { return nil }
+            return (s, e)
+        }
+        let overlapsReal = { (s: Date, e: Date) in realSpans.contains { $0.0 < e && s < $0.1 } }
+        let hr = await samples(.heartRate, from: from)
+        let swim = await samples(.distanceSwimming, from: from)
+        let walkRun = await samples(.distanceWalkingRunning, from: from)
+        let energy = await samples(.activeEnergyBurned, from: from)
+        let resting = await stat(.restingHeartRate, .discreteAverage, from, Date())?.averageQuantity()?.doubleValue(for: bpm) ?? 60
+
+        // Windows: dense heart rate (samples ≤ 90 s apart) joined across pauses of up to 5 min,
+        // plus swim distance clusters (the watch's heart rate is patchy in water)
+        var windows: [(Date, Date)] = []
+        var cur: (Date, Date, Int)?
+        for s in hr {
+            if let c = cur, s.startDate.timeIntervalSince(c.1) <= 90 { cur = (c.0, max(c.1, s.endDate), c.2 + 1) }
+            else {
+                if let c = cur, c.2 >= 20, c.1.timeIntervalSince(c.0) >= 8 * 60 { windows.append((c.0, c.1)) }
+                cur = (s.startDate, s.endDate, 1)
+            }
+        }
+        if let c = cur, c.2 >= 20, c.1.timeIntervalSince(c.0) >= 8 * 60 { windows.append((c.0, c.1)) }
+        var swimCluster: (Date, Date, Double)?
+        for s in swim {
+            let m = s.quantity.doubleValue(for: .meter())
+            if let c = swimCluster, s.startDate.timeIntervalSince(c.1) <= 5 * 60 { swimCluster = (c.0, max(c.1, s.endDate), c.2 + m) }
+            else {
+                if let c = swimCluster, c.2 >= 50 { windows.append((c.0, c.1)) }
+                swimCluster = (s.startDate, s.endDate, m)
+            }
+        }
+        if let c = swimCluster, c.2 >= 50 { windows.append((c.0, c.1)) }
+        windows.sort { $0.0 < $1.0 }
+        var merged: [(Date, Date)] = []
+        for w in windows {
+            if let last = merged.last, w.0.timeIntervalSince(last.1) <= 5 * 60 { merged[merged.count - 1] = (last.0, max(last.1, w.1)) } else { merged.append(w) }
+        }
+
+        let sum = { (list: [HKQuantitySample], s: Date, e: Date, unit: HKUnit) -> Double in
+            list.filter { $0.startDate >= s && $0.endDate <= e.addingTimeInterval(60) }.reduce(0) { $0 + $1.quantity.doubleValue(for: unit) }
+        }
+        var out: [[String: Any]] = []
+        for (s, e) in merged where e.timeIntervalSince(s) >= 8 * 60 && !overlapsReal(s, e) {
+            let rates = hr.filter { $0.startDate >= s && $0.endDate <= e }.map { $0.quantity.doubleValue(for: bpm) }.sorted()
+            let median = rates.isEmpty ? 0 : rates[rates.count / 2]
+            let swimM = sum(swim, s, e, .meter())
+            let footM = sum(walkRun, s, e, .meter())
+            let hours = e.timeIntervalSince(s) / 3600
+            let kmh = footM / 1000 / hours
+            let type: String
+            if swimM >= 50 { type = "swimming" }
+            else if median < max(95, resting + 20) { continue } // calm stretch: not a workout
+            else if kmh >= 7 { type = "running" }
+            else if footM >= 800 && kmh >= 3 { type = "walking" }
+            else { type = "workout" } // gym: high heart rate without going anywhere
+            var a: [String: Any] = [
+                "external_id": "inferred-\(Int(s.timeIntervalSince1970))",
+                "type": type,
+                "name": ["swimming": "Natación", "running": "Correr", "walking": "Caminar"][type].map { "\($0) · detectada" } ?? "Entrenamiento · detectado",
+                "start_at": iso.string(from: s),
+                "end_at": iso.string(from: e),
+                "duration_s": Int(e.timeIntervalSince(s)),
+                "kcal": sum(energy, s, e, .kilocalorie()),
+                "kcal_is_net": true,
+            ]
+            if swimM >= 50 { a["distance_m"] = swimM } else if footM >= 200 { a["distance_m"] = footM }
+            if !rates.isEmpty {
+                a["avg_hr"] = rates.reduce(0, +) / Double(rates.count)
+                a["max_hr"] = rates.last!
+            }
+            out.append(a)
+        }
+        return out
     }
 
     private func latestWeight(from: Date) async -> [String: Any]? {
