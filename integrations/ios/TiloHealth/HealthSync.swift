@@ -205,7 +205,7 @@ final class HealthSync: ObservableObject {
         ]
         if let w = await latestWeight(from: from) { payload["weights"] = [w] }
         let found = (payload["activities"] as? [[String: Any]] ?? []).map { "\($0["type"] ?? "?") \($0["start_at"] ?? "?")" }
-        payload["diagnostics"] = ["wakes": UserDefaults.standard.stringArray(forKey: "wakes") ?? [], "app": "ios 1.2", "workouts_found": found, "workouts_error": lastWorkoutError ?? "", "last_result": lastResult]
+        payload["diagnostics"] = ["wakes": UserDefaults.standard.stringArray(forKey: "wakes") ?? [], "app": "ios 1.2", "workouts_found": found, "workouts_error": lastWorkoutError ?? "", "detect": detectLog, "last_result": lastResult]
         return payload
     }
 
@@ -244,6 +244,7 @@ final class HealthSync: ObservableObject {
     }
 
     private var lastWorkoutError: String?
+    private var detectLog: [String] = []
 
     private func workouts(from: Date) async -> [[String: Any]] {
         let predicate = HKSamplePredicate.workout(HKQuery.predicateForSamples(withStart: from, end: nil))
@@ -305,67 +306,74 @@ final class HealthSync: ObservableObject {
         let energy = await samples(.activeEnergyBurned, from: from)
         let resting = await stat(.restingHeartRate, .discreteAverage, from, Date())?.averageQuantity()?.doubleValue(for: bpm) ?? 60
 
-        // Windows: dense heart rate (samples ≤ 90 s apart) joined across pauses of up to 5 min,
-        // plus swim distance clusters (the watch's heart rate is patchy in water)
-        var windows: [(Date, Date)] = []
+        // Heart-rate windows: dense samples (≤ 90 s apart), joined across pauses of up to 5 min
+        var hrWindows: [(Date, Date)] = []
         var cur: (Date, Date, Int)?
+        let closeHr = { (c: (Date, Date, Int)) in if c.2 >= 20, c.1.timeIntervalSince(c.0) >= 8 * 60 { hrWindows.append((c.0, c.1)) } }
         for s in hr {
             if let c = cur, s.startDate.timeIntervalSince(c.1) <= 90 { cur = (c.0, max(c.1, s.endDate), c.2 + 1) }
-            else {
-                if let c = cur, c.2 >= 20, c.1.timeIntervalSince(c.0) >= 8 * 60 { windows.append((c.0, c.1)) }
-                cur = (s.startDate, s.endDate, 1)
-            }
+            else { if let c = cur { closeHr(c) }; cur = (s.startDate, s.endDate, 1) }
         }
-        if let c = cur, c.2 >= 20, c.1.timeIntervalSince(c.0) >= 8 * 60 { windows.append((c.0, c.1)) }
-        var swimCluster: (Date, Date, Double)?
+        if let c = cur { closeHr(c) }
+        var joined: [(Date, Date)] = []
+        for w in hrWindows {
+            if let last = joined.last, w.0.timeIntervalSince(last.1) <= 5 * 60 { joined[joined.count - 1] = (last.0, max(last.1, w.1)) } else { joined.append(w) }
+        }
+        // Swim windows: clusters of swim distance (heart rate is patchy in water), always their own session
+        var swims: [(Date, Date, Double)] = []
+        var sc: (Date, Date, Double)?
         for s in swim {
             let m = s.quantity.doubleValue(for: .meter())
-            if let c = swimCluster, s.startDate.timeIntervalSince(c.1) <= 5 * 60 { swimCluster = (c.0, max(c.1, s.endDate), c.2 + m) }
-            else {
-                if let c = swimCluster, c.2 >= 50 { windows.append((c.0, c.1)) }
-                swimCluster = (s.startDate, s.endDate, m)
-            }
+            if let c = sc, s.startDate.timeIntervalSince(c.1) <= 5 * 60 { sc = (c.0, max(c.1, s.endDate), c.2 + m) }
+            else { if let c = sc, c.2 >= 50 { swims.append(c) }; sc = (s.startDate, s.endDate, m) }
         }
-        if let c = swimCluster, c.2 >= 50 { windows.append((c.0, c.1)) }
-        windows.sort { $0.0 < $1.0 }
-        var merged: [(Date, Date)] = []
-        for w in windows {
-            if let last = merged.last, w.0.timeIntervalSince(last.1) <= 5 * 60 { merged[merged.count - 1] = (last.0, max(last.1, w.1)) } else { merged.append(w) }
+        if let c = sc, c.2 >= 50 { swims.append(c) }
+        // A heart-rate window that contains a swim is split around it: gym, then pool, are two sessions
+        var land: [(Date, Date)] = []
+        for w in joined {
+            var pieces = [w]
+            for sw in swims {
+                pieces = pieces.flatMap { p -> [(Date, Date)] in
+                    guard sw.0 < p.1 && p.0 < sw.1 else { return [p] }
+                    return [(p.0, min(p.1, sw.0)), (max(p.0, sw.1), p.1)].filter { $0.1.timeIntervalSince($0.0) > 0 }
+                }
+            }
+            land += pieces
         }
 
         let sum = { (list: [HKQuantitySample], s: Date, e: Date, unit: HKUnit) -> Double in
             list.filter { $0.startDate >= s && $0.endDate <= e.addingTimeInterval(60) }.reduce(0) { $0 + $1.quantity.doubleValue(for: unit) }
         }
+        let rates = { (s: Date, e: Date) in hr.filter { $0.startDate >= s && $0.endDate <= e }.map { $0.quantity.doubleValue(for: self.bpm) }.sorted() }
         var out: [[String: Any]] = []
-        for (s, e) in merged where e.timeIntervalSince(s) >= 8 * 60 && !overlapsReal(s, e) {
-            let rates = hr.filter { $0.startDate >= s && $0.endDate <= e }.map { $0.quantity.doubleValue(for: bpm) }.sorted()
-            let median = rates.isEmpty ? 0 : rates[rates.count / 2]
-            let swimM = sum(swim, s, e, .meter())
-            let footM = sum(walkRun, s, e, .meter())
-            let hours = e.timeIntervalSince(s) / 3600
-            let kmh = footM / 1000 / hours
-            let type: String
-            if swimM >= 50 { type = "swimming" }
-            else if median < max(95, resting + 20) { continue } // calm stretch: not a workout
-            else if kmh >= 7 { type = "running" }
-            else if footM >= 800 && kmh >= 3 { type = "walking" }
-            else { type = "workout" } // gym: high heart rate without going anywhere
+        func add(_ type: String, _ s: Date, _ e: Date, distance: Double?, label: String) {
+            let r = rates(s, e)
             var a: [String: Any] = [
-                "external_id": "inferred-\(Int(s.timeIntervalSince1970))",
-                "type": type,
-                "name": ["swimming": "Natación", "running": "Correr", "walking": "Caminar"][type].map { "\($0) · detectada" } ?? "Entrenamiento · detectado",
-                "start_at": iso.string(from: s),
-                "end_at": iso.string(from: e),
-                "duration_s": Int(e.timeIntervalSince(s)),
-                "kcal": sum(energy, s, e, .kilocalorie()),
-                "kcal_is_net": true,
+                "external_id": "inferred-\(Int(s.timeIntervalSince1970))", "type": type, "name": label,
+                "start_at": iso.string(from: s), "end_at": iso.string(from: e), "duration_s": Int(e.timeIntervalSince(s)),
+                "kcal": sum(energy, s, e, .kilocalorie()), "kcal_is_net": true,
             ]
-            if swimM >= 50 { a["distance_m"] = swimM } else if footM >= 200 { a["distance_m"] = footM }
-            if !rates.isEmpty {
-                a["avg_hr"] = rates.reduce(0, +) / Double(rates.count)
-                a["max_hr"] = rates.last!
-            }
+            if let distance, distance > 0 { a["distance_m"] = distance }
+            if !r.isEmpty { a["avg_hr"] = r.reduce(0, +) / Double(r.count); a["max_hr"] = r.last! }
             out.append(a)
+        }
+        detectLog = land.map { w in
+            let r = rates(w.0, w.1); let m = sum(walkRun, w.0, w.1, .meter())
+            return "\(iso.string(from: w.0)) \(Int(w.1.timeIntervalSince(w.0) / 60))min median=\(r.isEmpty ? 0 : Int(r[r.count / 2])) foot=\(Int(m))m n=\(r.count) resting=\(Int(resting))"
+        }
+        for sw in swims where sw.1.timeIntervalSince(sw.0) >= 5 * 60 && !overlapsReal(sw.0, sw.1) {
+            add("swimming", sw.0, sw.1, distance: sw.2, label: "Natación · detectada")
+        }
+        for (s, e) in land where e.timeIntervalSince(s) >= 8 * 60 && !overlapsReal(s, e) {
+            let r = rates(s, e)
+            let median = r.isEmpty ? 0 : r[r.count / 2]
+            let footM = sum(walkRun, s, e, .meter())
+            let kmh = footM / 1000 / (e.timeIntervalSince(s) / 3600)
+            // Dense heart rate already means a workout app was recording; the pulse only decides the kind.
+            // Running needs both pace and effort (a brisk walk can reach 7 km/h at 95 ppm).
+            if kmh >= 7.5 && median >= max(110, resting + 40) { add("running", s, e, distance: footM, label: "Correr · detectada") }
+            else if footM >= 800 && kmh >= 3 { if median >= resting + 15 { add("walking", s, e, distance: footM, label: "Caminar · detectada") } }
+            else if median >= resting + 15 { add("workout", s, e, distance: nil, label: "Entrenamiento · detectado") } // gym: pulse up without going anywhere
         }
         return out
     }
