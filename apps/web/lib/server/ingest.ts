@@ -29,6 +29,9 @@ export async function ingest(userId: string, payload: IngestPayload): Promise<In
   // Daily metrics: one row per day and source
   const daily = (payload.daily ?? []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d.date))
   if (daily.length) {
+    // Only the fields this sync measured: a missing value must never erase one stored before
+    const { data: before } = await db.from("daily_metrics").select("*").eq("user_id", userId).eq("source", payload.source).in("date", daily.map((d) => d.date))
+    const prev = new Map((before ?? []).map((r) => [r.date as string, r as Record<string, unknown>]))
     const rows = daily.map((d) => {
       touched.add(d.date)
       const n = (v: unknown, digits = 0) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v * 10 ** digits) / 10 ** digits : null)
@@ -39,6 +42,12 @@ export async function ingest(userId: string, payload: IngestPayload): Promise<In
         ...(d.irregular_rhythm_events != null ? { irregular_rhythm_events: n(d.irregular_rhythm_events) } : {}),
         updated_at: new Date().toISOString(),
       }
+    }).map((r) => {
+      const old = prev.get(r.date)
+      if (!old) return r
+      const merged: Record<string, unknown> = { ...r }
+      for (const [k, v] of Object.entries(r)) if (v == null && old[k] != null) merged[k] = old[k]
+      return merged as typeof r
     })
     let { error } = await db.from("daily_metrics").upsert(rows, { onConflict: "user_id,date,source" })
     // A column added by a newer migration that isn't applied yet: keep the rest of the data

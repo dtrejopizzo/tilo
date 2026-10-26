@@ -19,6 +19,16 @@ final class HealthSync: ObservableObject {
     var pendingState: String?
 
     private let store = HKHealthStore()
+    private var pendingUnlock = false
+
+    // Last wake-ups (time, why, whether Health was readable), sent along so the server can tell how
+    // quickly iOS really delivers new data
+    private func logWake(_ reason: String) {
+        var log = UserDefaults.standard.stringArray(forKey: "wakes") ?? []
+        let state = UIApplication.shared.applicationState == .background ? "bg" : "fg"
+        log.append("\(ISO8601DateFormatter().string(from: Date())) \(state) \(UIApplication.shared.isProtectedDataAvailable ? "unlocked" : "locked") \(reason)")
+        UserDefaults.standard.set(Array(log.suffix(40)), forKey: "wakes")
+    }
     private var observing = false
     private var rerun = false
 
@@ -84,10 +94,22 @@ final class HealthSync: ObservableObject {
     func startObserving() {
         guard HKHealthStore.isHealthDataAvailable(), !observing, UserDefaults.standard.bool(forKey: "healthConnected") else { return }
         observing = true
+        // A sync skipped while locked runs as soon as the phone is unlocked
+        NotificationCenter.default.addObserver(forName: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil, queue: .main) { _ in
+            Task { @MainActor in
+                let shared = HealthSync.shared
+                if shared.pendingUnlock {
+                    shared.pendingUnlock = false
+                    await shared.sync(reason: "al desbloquear", force: true)
+                }
+            }
+        }
         for type in observedTypes {
+            let isWorkout = type == HKWorkoutType.workoutType()
             let query = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, error in
                 Task { @MainActor in
-                    if error == nil { await HealthSync.shared.sync(reason: "dato nuevo en Salud") }
+                    // A new workout always goes out, even right after a steps update
+                    if error == nil { await HealthSync.shared.sync(reason: isWorkout ? "entrenamiento nuevo" : "dato nuevo en Salud", force: isWorkout) }
                     completion()
                 }
             }
@@ -100,6 +122,13 @@ final class HealthSync: ObservableObject {
 
     func sync(reason: String, force: Bool = false) async {
         guard let token, let url = URL(string: "\(baseURL)/api/v1/ingest") else { return }
+        logWake(reason)
+        // Health data is encrypted while the phone is locked: reading now returns nothing. Wait for
+        // the unlock (the app keeps observing it) instead of sending an empty day.
+        guard UIApplication.shared.isProtectedDataAvailable else {
+            pendingUnlock = true
+            return
+        }
         if busy {
             rerun = true
             return
@@ -171,6 +200,7 @@ final class HealthSync: ObservableObject {
             "activities": await workouts(from: from),
         ]
         if let w = await latestWeight(from: from) { payload["weights"] = [w] }
+        payload["diagnostics"] = ["wakes": UserDefaults.standard.stringArray(forKey: "wakes") ?? [], "app": "ios 1.1"]
         return payload
     }
 
