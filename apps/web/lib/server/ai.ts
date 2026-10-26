@@ -125,12 +125,15 @@ export async function generateJson<T>(userId: string, feature: string, system: s
         model: creds.model,
         temperature: 0,
         response_format: { type: "json_object" },
+        // Room for the model's reasoning plus the answer; low effort keeps it fast and cheap
+        ...(creds.provider === "openrouter" ? { max_tokens: 6000, reasoning: { effort: "low" } } : {}),
         messages: [{ role: "system", content: system }, { role: "user", content: prompt }],
       }),
     })
     const data = await res.json()
     if (!res.ok) throw new Error(`${creds.provider === "openrouter" ? "OpenRouter" : "OpenAI"}: ${data.error?.message ?? res.status}`)
     text = data.choices?.[0]?.message?.content ?? ""
+    if (!text.trim()) throw new Error(`${creds.model} returned no text (finish: ${data.choices?.[0]?.finish_reason ?? "?"})`)
     inputTokens = data.usage?.prompt_tokens ?? 0
     outputTokens = data.usage?.completion_tokens ?? 0
   } else {
@@ -180,7 +183,7 @@ function parseJsonLoose<T>(text: string, feature: string): T {
     }
   }
   console.error(`[ai] invalid JSON for ${feature}:`, text.slice(0, 500))
-  throw new Error(`The AI returned invalid JSON for ${feature}`)
+  throw new Error(`The AI returned invalid JSON for ${feature}: ${JSON.stringify(text.slice(0, 160))} … ${JSON.stringify(text.slice(-160))} (${text.length} chars)`)
 }
 
 // ---------- Meals ----------
