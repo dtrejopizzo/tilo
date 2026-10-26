@@ -6,8 +6,13 @@ struct SettingsView: View {
     @Environment(\.webAuthenticationSession) private var webAuth
     @State private var manualToken = ""
     @State private var showManual = false
+    @AppStorage("appearance") private var appearance = Appearance.system.rawValue
 
     var body: some View {
+        settings.preferredColorScheme(Appearance(rawValue: appearance)?.scheme) // sheets don't inherit it
+    }
+
+    private var settings: some View {
         NavigationStack {
             List {
                 Section {
@@ -52,6 +57,12 @@ struct SettingsView: View {
                 }
 
                 if sync.token != nil && sync.healthConnected {
+                    Section("Apariencia") {
+                        Picker("Tema", selection: $appearance) {
+                            ForEach(Appearance.allCases) { Text($0.label).tag($0.rawValue) }
+                        }
+                        .pickerStyle(.segmented)
+                    }
                     Section("Sincronización") {
                         Button {
                             Task { await sync.sync(reason: "a mano", force: true) }

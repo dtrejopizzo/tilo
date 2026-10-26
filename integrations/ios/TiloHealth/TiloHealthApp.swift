@@ -8,6 +8,7 @@ import SwiftUI
 struct TiloHealthApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @StateObject private var sync = HealthSync.shared
+    @AppStorage("appearance") private var appearance = Appearance.system.rawValue
 
     var body: some Scene {
         WindowGroup {
@@ -16,7 +17,7 @@ struct TiloHealthApp: App {
                 if sync.token != nil && sync.healthConnected { TodayView() } else { SettingsView() }
             }
                 .environmentObject(sync)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(Appearance(rawValue: appearance)?.scheme)
                 .onOpenURL { url in sync.handleCallback(url) }
         }
     }

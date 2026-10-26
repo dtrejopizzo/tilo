@@ -150,17 +150,29 @@ struct TodayView: View {
 
 // MARK: - Look
 
+// The web's palette, in light and dark; follows the scheme chosen in Ajustes (or the system's)
 enum Theme {
-    static let bg = Color(red: 0.06, green: 0.07, blue: 0.07)
-    static let surface = Color(red: 0.09, green: 0.11, blue: 0.09)
-    static let surface2 = Color(red: 0.11, green: 0.14, blue: 0.13)
-    static let line = Color(red: 0.16, green: 0.19, blue: 0.17)
-    static let leaf = Color(red: 0.30, green: 0.76, blue: 0.49)
-    static let protein = Color(red: 0.66, green: 0.52, blue: 0.92)
-    static let carbs = Color(red: 0.35, green: 0.61, blue: 0.94)
-    static let fat = Color(red: 0.89, green: 0.64, blue: 0.26)
-    static let danger = Color(red: 0.94, green: 0.42, blue: 0.38)
-    static let live = Color(red: 0.96, green: 0.77, blue: 0.09)
+    private static func pair(_ light: UInt32, _ dark: UInt32) -> Color {
+        func c(_ hex: UInt32) -> UIColor { UIColor(red: CGFloat((hex >> 16) & 0xff) / 255, green: CGFloat((hex >> 8) & 0xff) / 255, blue: CGFloat(hex & 0xff) / 255, alpha: 1) }
+        return Color(UIColor { $0.userInterfaceStyle == .dark ? c(dark) : c(light) })
+    }
+    static let bg = pair(0xf4f6f4, 0x0f1311)
+    static let surface = pair(0xffffff, 0x161b18)
+    static let surface2 = pair(0xeef1ee, 0x1d2420)
+    static let line = pair(0xdde3dd, 0x29312c)
+    static let leaf = pair(0x2f9e5f, 0x4cc27e)
+    static let protein = pair(0x8a5cd6, 0xa985ea)
+    static let carbs = pair(0x2f7fe0, 0x5a9cf0)
+    static let fat = pair(0xd48a1c, 0xe2a443)
+    static let danger = pair(0xd6453d, 0xef6b62)
+    static let live = pair(0xd9a400, 0xf5c518)
+}
+
+enum Appearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var label: String { ["system": "Sistema", "light": "Claro", "dark": "Oscuro"][rawValue]! }
+    var scheme: ColorScheme? { self == .light ? .light : self == .dark ? .dark : nil }
 }
 
 func iso(_ s: String) -> Date? { ISO8601DateFormatter().date(from: s) ?? ISO8601DateFormatter.withFraction.date(from: s) }
