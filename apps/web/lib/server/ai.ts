@@ -12,7 +12,7 @@ import { decrypt } from "./crypto"
 type Provider = "gemini" | "openai" | "anthropic" | "openrouter"
 
 // Features that deserve the better model; everything else uses the cheap one
-const QUALITY_FEATURES = new Set(["meal"])
+const QUALITY_FEATURES = new Set(["meal", "insights"])
 
 interface AiCredentials {
   provider: Provider
@@ -211,17 +211,22 @@ export async function estimateMeal(userId: string, description: string, localTim
 
 // ---------- Progress ----------
 
-// Three or four short observations a coach would make from the last two weeks, tied to the goals
-export async function readProgress(userId: string, facts: Record<string, unknown>, today: string): Promise<string[]> {
+// The day's panorama: what matters most right now for the person's goals, from today's data and
+// the week's trend. Rewritten whenever the data changes, avoiding the previous wording.
+export async function readProgress(userId: string, facts: Record<string, unknown>, today: string, localTime: string, previous: string[]): Promise<string[]> {
   const r = await generateJson<{ bullets?: string[] }>(
     userId,
     "insights",
-    `You are a concise health and performance coach. From the person's last-7-day numbers (with the previous week for comparison) and their goals, write 3 or 4 observations in Rioplatense Spanish (vos), each one sentence, max 22 words.
-Connect data across areas when the numbers support it (sleep vs training, protein vs strength, calorie balance vs weight trend, meetings/tasks vs steps or sleep). Be specific with numbers. strength_sessions_week counts gym/strength sessions recorded by the watch; logged_gym_sets_week only counts sets typed in Tilo, so 0 sets with strength sessions means "not logged", not "didn't train". Lead with what matters most for their goals. If a datum is null, don't invent it; you may say it's missing only if it blocks a goal. No medical diagnoses, no generic advice, no emojis.
-Today is ${today}. Return {"bullets": string[]}.`,
-    JSON.stringify(facts),
+    `You are the person's health and performance coach, looking at their dashboard at ${localTime} on ${today}. Write exactly 4 short lines in Rioplatense Spanish (vos), max 24 words each, that orient their next hours toward their goals.
+How to choose:
+1. Start from TODAY (today_* fields, last night's sleep, sessions done, habits pending, water and protein so far) and say what's left and what to do about it given the time of day (e.g. at 18:00 with 900 ml of 2800, that's the priority; if they already trained, acknowledge it and point to recovery/protein).
+2. Then the 7-day trend that most affects their main goal (weight goal and date first, then strength, sleep, steps), with concrete numbers. Explain cause and effect when the data supports it (short sleep and higher resting HR, no meals logged so the deficit is unknown, protein vs strength sessions).
+3. Never repeat a line from the previous panorama below unless the situation is the same and still the top priority; rephrase and update the numbers.
+Rules: use only the numbers given, never invent; null means unknown. Round naturally (hours and minutes for sleep, liters for water). No medical diagnoses, no emojis, no generic advice. strength_sessions_week counts gym sessions from the watch; logged_gym_sets_week only sets typed in Tilo.
+Return {"bullets": string[]}.`,
+    JSON.stringify({ facts, previous_panorama: previous }),
   )
-  return (r.bullets ?? []).filter((b) => typeof b === "string" && b.trim()).slice(0, 4).map((b) => b.trim().slice(0, 220))
+  return (r.bullets ?? []).filter((b) => typeof b === "string" && b.trim()).slice(0, 4).map((b) => b.trim().slice(0, 240))
 }
 
 // ---------- Habits ----------

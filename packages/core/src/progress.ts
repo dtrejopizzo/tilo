@@ -25,7 +25,9 @@ export interface ProgressReport {
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null)
 const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
 
-export function buildProgress(r: RangeData, today: string): ProgressReport {
+export function buildProgress(input: RangeData, today: string): ProgressReport {
+  // A session longer than 8 h is a recording left running, not training
+  const r = { ...input, activities: input.activities.filter((a) => a.duration_s <= 8 * 3600) }
   const g = r.goals
   const last7 = Array.from({ length: 7 }, (_, i) => addDays(today, -6 + i))
   const prev7 = Array.from({ length: 7 }, (_, i) => addDays(today, -13 + i))
@@ -108,10 +110,26 @@ export function buildProgress(r: RangeData, today: string): ProgressReport {
     return done / (daily.length * 7)
   })()
 
+  // Today so far: what's done and what's left against the daily goals
+  const t = sum.get(today)
+  const tm = metric(today)
+  const todaySessions = r.activities.filter((a) => a.date === today)
+  const dailyHabits = r.habits.filter((h) => h.frequency === "daily" && (!h.days || h.days.includes((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7)))
+  const todayFacts = {
+    today_kcal_in: t ? Math.round(Number(t.kcal_in)) : 0, today_meals: t?.meals_count ?? 0, today_protein_g: t ? Math.round(Number(t.protein_g)) : 0,
+    today_water_ml: t?.water_ml ?? 0, today_steps: tm.steps ?? null, today_active_kcal: tm.active_kcal != null ? Math.round(tm.active_kcal) : null,
+    last_night_sleep_min: tm.sleep_min ?? null, today_resting_hr: tm.resting_hr ?? null,
+    today_sessions: todaySessions.map((a) => `${a.type} ${Math.round(a.duration_s / 60)}min`).join(", ") || "none",
+    today_habits_done: dailyHabits.filter((h) => h.dates.includes(today)).map((h) => h.name).join(", ") || "none",
+    today_habits_pending: dailyHabits.filter((h) => !h.dates.includes(today)).map((h) => h.name).join(", ") || "none",
+    today_burned_so_far: r.energy.find((e) => e.date === today)?.total ?? null,
+  }
+
   return {
     days: 14,
     goals: out,
     facts: {
+      ...todayFacts,
       kcal_in_avg: kcal != null ? Math.round(kcal) : null, kcal_goal: g.kcal, kcal_burned_avg: burned != null ? Math.round(burned) : null,
       balance_avg: kcal != null && burned != null ? Math.round(kcal - burned) : null, meal_days_logged: logged(done7).length,
       protein_avg: prot != null ? Math.round(prot) : null, protein_goal: g.protein_g,

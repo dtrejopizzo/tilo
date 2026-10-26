@@ -639,22 +639,24 @@ interface Progress {
   bullets: string[]
   aiError: string | null
 }
-const progressCache = new Map<string, { at: number; p: Progress }>()
+const progressCache = new Map<string, { at: number; p: Progress; version?: string }>()
 
-function useInsights(date: string) {
+// Refetched whenever the day's data changes (a meal, water, a session, sleep); the server decides
+// whether that's enough to rewrite the panorama
+function useInsights(date: string, version: string) {
   const [p, setP] = useState<Progress | null>(() => progressCache.get(date)?.p ?? null)
   useEffect(() => {
     let alive = true
     const hit = progressCache.get(date)
-    if (hit && Date.now() - hit.at < 5 * 60_000) return void setP(hit.p)
+    if (hit && hit.version === version && Date.now() - hit.at < 5 * 60_000) return void setP(hit.p)
     tilo.request<Progress>("GET", `/insights?date=${date}`).then((r) => {
-      progressCache.set(date, { at: Date.now(), p: r })
+      progressCache.set(date, { at: Date.now(), p: r, version })
       if (alive) setP(r)
     }).catch((e) => alive && setP({ goals: [], bullets: [], aiError: e instanceof Error ? e.message : "No pude leer tu semana." }))
     return () => {
       alive = false
     }
-  }, [date])
+  }, [date, version])
   return p
 }
 
@@ -676,7 +678,10 @@ function SourceLogo({ source }: { source: string }) {
 
 export function EnergyCard({ view, day, date }: CardProps) {
   const e = view.energy
-  const insights = useInsights(date)
+  // What the panorama depends on: changes when anything is logged or synced for the day
+  const version = [day.meals.length, Math.round(day.meals.reduce((s, m) => s + Number(m.kcal ?? 0), 0)), day.water.length, day.activities.length,
+    day.metrics.map((m) => `${m.steps ?? ""}/${m.sleep_min ?? ""}`).join(","), day.habits.filter((h) => h.done).length, day.supplements.filter((x) => x.taken).length].join("|")
+  const insights = useInsights(date, version)
   const parts = [
     { cls: "e-bmr", v: e.bmr.kcal, label: "Basal", how: e.bmr.method },
     { cls: "e-neat", v: e.neat.kcal, label: "Movimiento", how: e.neat.method },
@@ -719,11 +724,11 @@ export function EnergyCard({ view, day, date }: CardProps) {
       {e.confidence === "low" && (
         <div className="reco"><Lightbulb aria-hidden="true" /><span>Conectá tu reloj o celular (Settings → Conexiones) y el gasto pasa a medirse con tus pasos y tu energía activa.</span></div>
       )}
-      <div className="slot" style={{ paddingLeft: 10 }}>Tu semana</div>
+      <div className="slot" style={{ paddingLeft: 10 }}>Panorama del día</div>
       {insights === null ? (
-        <div className="empty" style={{ paddingTop: 2 }}>Analizando tu semana…</div>
+        <div className="empty" style={{ paddingTop: 2 }}>Armando tu panorama…</div>
       ) : insights.bullets.length > 0 ? (
-        <ul className="insights" aria-label="Tu semana">{insights.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
+        <ul className="insights" aria-label="Panorama del día">{insights.bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
       ) : (
         <div className="empty" style={{ paddingTop: 2 }}>{insights.aiError ?? "Todavía no hay datos suficientes para leer tu semana."}</div>
       )}
