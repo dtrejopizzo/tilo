@@ -36,7 +36,9 @@ export const GET = apiRoute(async ({ uid, req }) => {
   if (stale || req.nextUrl.searchParams.get("refresh") === "1") {
     const tz = profile?.timezone ?? "America/Argentina/Buenos_Aires"
     const localTime = new Intl.DateTimeFormat("es-AR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date())
-    const meetings = await calendarEvents(uid, today, tz).then((e) => e.length).catch(() => null)
+    // Real meetings: not all-day blocks, not the recurring ones the person hid (sleep, training)
+    const hidden = ((data.hidden_events as string[] | undefined) ?? []).map((h) => h.trim().toLowerCase())
+    const meetings = await calendarEvents(uid, today, tz).then((e) => e.filter((x) => !x.allDay && !hidden.includes(x.title.trim().toLowerCase())).length).catch(() => null)
     try {
       bullets = await readProgress(uid, { ...report.facts, meetings_today: meetings, sex: profile?.sex ?? null }, today, localTime, cached?.bullets ?? [])
       await db.from("settings").upsert({ user_id: uid, data: { ...data, insights_cache: { date: today, at: Date.now(), bullets, fp } }, updated_at: new Date().toISOString() })

@@ -51,7 +51,10 @@ export function buildProgress(input: RangeData, today: string): ProgressReport {
   if (g.protein_g) out.push({ key: "protein", label: "Proteína", value: prot != null ? `${Math.round(prot)} g/día` : "sin comidas", target: `objetivo ${g.protein_g} g`, ratio: prot != null ? prot / g.protein_g : null, trend: trendOf(prot, protPrev), good: prot != null && protPrev != null ? prot >= protPrev : null, note: prot != null ? `${logged(done7).length} de 7 días registrados` : undefined })
 
   const kcal = avg(series(logged(done7), (d) => Number(sum.get(d)?.kcal_in)))
-  const burned = avg(series(done7, (d) => Number(r.energy.find((e) => e.date === d)?.total ?? NaN)))
+  // Expenditure: skip days distorted by a bad recording (more than 1.6× the median day)
+  const burnedDays = series(done7, (d) => Number(r.energy.find((e) => e.date === d)?.total ?? NaN))
+  const burnedMedian = [...burnedDays].sort((a, b) => a - b)[Math.floor(burnedDays.length / 2)] ?? 0
+  const burned = avg(burnedDays.filter((v) => v <= burnedMedian * 1.6))
 
   const water = avg(series(done7, (d) => sum.get(d)?.water_ml ?? null).filter((v) => v > 0))
   const waterPrev = avg(series(prev7, (d) => sum.get(d)?.water_ml ?? null).filter((v) => v > 0))
