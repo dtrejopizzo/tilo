@@ -51,6 +51,8 @@ export const GET = apiRoute(async ({ uid, req }) => {
     } catch (e) {
       aiError = e instanceof PaymentRequiredError ? e.message : "No pude generar el panorama ahora."
       if (!(e instanceof PaymentRequiredError)) console.error("[insights]", e)
+      // Keep the reason next to the cache so it can be read without the logs
+      await db.from("settings").upsert({ user_id: uid, data: { ...data, insights_error: { at: new Date().toISOString(), error: String((e as Error)?.message ?? e).slice(0, 600) } }, updated_at: new Date().toISOString() })
     }
   }
   return { ...report, bullets, aiError, generatedAt: cached && !stale ? cached.at : Date.now() }
