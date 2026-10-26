@@ -153,12 +153,34 @@ export async function generateJson<T>(userId: string, feature: string, system: s
   }
 
   if (!creds.own) await meter(userId, feature, inputTokens, outputTokens)
-  const json = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)
-  try {
-    return JSON.parse(json) as T
-  } catch {
-    throw new Error(`The AI returned invalid JSON for ${feature}`)
+  return parseJsonLoose<T>(text, feature)
+}
+
+// Models sometimes wrap the JSON in prose or a code fence, or add a second object after it:
+// take the first balanced {...} that parses
+function parseJsonLoose<T>(text: string, feature: string): T {
+  const clean = text.replace(/```(?:json)?/gi, "")
+  for (let start = clean.indexOf("{"); start !== -1; start = clean.indexOf("{", start + 1)) {
+    let depth = 0
+    let inString = false
+    for (let i = start; i < clean.length; i++) {
+      const ch = clean[i]
+      if (inString) {
+        if (ch === "\\") i++
+        else if (ch === '"') inString = false
+      } else if (ch === '"') inString = true
+      else if (ch === "{") depth++
+      else if (ch === "}" && --depth === 0) {
+        try {
+          return JSON.parse(clean.slice(start, i + 1)) as T
+        } catch {
+          break
+        }
+      }
+    }
   }
+  console.error(`[ai] invalid JSON for ${feature}:`, text.slice(0, 500))
+  throw new Error(`The AI returned invalid JSON for ${feature}`)
 }
 
 // ---------- Meals ----------
