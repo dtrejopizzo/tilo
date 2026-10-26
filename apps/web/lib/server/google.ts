@@ -198,7 +198,7 @@ async function triageInbox(userId: string, token: string, accountEmail: string, 
   const noise = (m: GmailMessage) => {
     const from = header(m, "From").toLowerCase()
     const addr = from.match(/<([^>]+)>/)?.[1] ?? from.trim()
-    return own.has(addr) || /mailer-daemon|postmaster|no-?reply|donotreply|mail delivery|delivery status/.test(from) || /^(undeliverable|undelivered|delivery status notification|returned mail|rejected:|automatic reply|respuesta automática|out of office|fuera de la oficina)/i.test(header(m, "Subject"))
+    return own.has(addr) || /mailer-daemon|postmaster|no-?reply|donotreply|mail delivery|delivery status|notifications?@|notify@|alerts?@|news(letter)?@|updates?@|events?@/.test(from) || /^(new notification|notification:|you have a new|tenés una nueva notificación)/i.test(header(m, "Subject")) || /^(undeliverable|undelivered|delivery status notification|returned mail|rejected:|automatic reply|respuesta automática|out of office|fuera de la oficina)/i.test(header(m, "Subject"))
   }
   const fresh = inboxPersonal.filter((m) => !(seen ?? []).some((s) => s.message_id === m.id) && !noise(m))
   if (!fresh.length) return 0
@@ -225,9 +225,14 @@ async function triageInbox(userId: string, token: string, accountEmail: string, 
     let taskId: string | null = null
     if (r.category === "reply" || r.category === "deadline") {
       // Every message in a thread is triaged, but a conversation is one task: reuse the open one
-      const { data: existing } = m.threadId
+      let { data: existing } = m.threadId
         ? await db.from("tasks").select("id").eq("user_id", userId).eq("source", "email").eq("status", "todo").eq("source_ref->>thread_id", m.threadId).limit(1).maybeSingle()
         : { data: null }
+      if (!existing) {
+        // Gmail sometimes splits one conversation into two threads: match by sender and subject too
+        const { data: same } = await db.from("tasks").select("id, title, source_ref").eq("user_id", userId).eq("source", "email").eq("status", "todo").eq("source_ref->>account", accountEmail)
+        existing = (same ?? []).find((t) => convKey((t.source_ref as { from?: string })?.from, taskSubject(t.title)) === convKey(from, e.subject)) ?? null
+      }
       if (existing) {
         await db.from("email_insights").upsert(
           { user_id: userId, account_email: accountEmail, message_id: e.id, thread_id: m.threadId ?? null, received_at: e.date, from_name: from, subject: e.subject.slice(0, 300), category: r.category, due_date: dueDate, task_id: existing.id },
@@ -291,6 +296,11 @@ function replyText(payload: GmailPart | undefined): string {
 
 interface GmailPart { mimeType?: string; body?: { data?: string }; parts?: GmailPart[]; headers?: { name: string; value: string }[] }
 
+// "Re: Pedido de Presupuesto | Web" and "Pedido de presupuesto | web" are the same conversation
+const convKey = (from: string | undefined, subject: string) =>
+  `${(from ?? "").toLowerCase().trim()}|${subject.toLowerCase().replace(/^((re|fw|fwd|rv|res)\s*:\s*)+/i, "").replace(/\s+/g, " ").trim()}`
+const taskSubject = (title: string) => title.replace(/^Responder a [^:]+:\s*/, "")
+
 // Open tasks that came from a mail: close them when the person answered after that mail, or took
 // the thread out of the inbox (archived or deleted). If the answer promises more ("te lo mando
 // mañana"), that promise becomes the next task on the thread.
@@ -337,9 +347,13 @@ async function closeAnsweredMailTasks(userId: string, token: string, accountEmai
         continue
       }
     }
-    await db.from("tasks").update({ status: "done", completed_on: today }).eq("id", t.id).eq("user_id", userId)
-    await db.from("email_insights").update({ replied_at: new Date(Number(sent.internalDate ?? Date.now())).toISOString(), dismissed: true }).eq("user_id", userId).eq("task_id", t.id)
-    closed++
+    // The same conversation may have a second task (Gmail split the thread): close them together
+    const siblings = mine.filter((o) => o.id !== t.id && convKey((o.source_ref as { from?: string })?.from, taskSubject(o.title)) === convKey(ref.from, taskSubject(t.title))).map((o) => o.id)
+    for (const id of [t.id, ...siblings]) {
+      await db.from("tasks").update({ status: "done", completed_on: today }).eq("id", id).eq("user_id", userId)
+      await db.from("email_insights").update({ replied_at: new Date(Number(sent.internalDate ?? Date.now())).toISOString(), dismissed: true }).eq("user_id", userId).eq("task_id", id)
+    }
+    closed += 1 + siblings.length
     if (follow) {
       await new ServerTiloApi(userId).addTask({
         title: follow.title,
