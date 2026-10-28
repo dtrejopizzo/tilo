@@ -64,12 +64,11 @@ struct HomeView: View {
 
     var body: some View {
         let moment = DayMoment.at(store.now)
-        ScrollView {
-            VStack(spacing: 12) {
+        VStack(spacing: 10) {
                 header(moment)
                 if let day = store.day {
                     KpiGrid(day: day, addWater: { Task { await store.addWater() } }).padding(.horizontal, 14)
-                    VStack(spacing: 12) {
+                    VStack(spacing: 10) {
                         BriefCard(brief: store.brief)
                         MeetingsCard(meetings: store.brief?.meetings ?? [], now: store.now, isToday: store.isToday) { goTo(1) }
                         TopTasksCard(tasks: store.brief?.tasks ?? [], date: store.dayKey, toggle: { t in Task { await store.toggle(t) } }) { goTo(2) }
@@ -80,12 +79,10 @@ struct HomeView: View {
                 } else {
                     ProgressView().padding(.top, 60)
                 }
-            }
-            .padding(.bottom, 16)
+                Spacer(minLength: 0)
         }
         .ignoresSafeArea(edges: .top)
         .background(Theme.bg)
-        .refreshable { await store.load(pull: true) }
         .safeAreaInset(edge: .bottom) { QuickAddBar(text: $text, saving: $saving) }
         .sheet(isPresented: $showSettings) { SettingsView().environmentObject(sync) }
     }
@@ -153,12 +150,12 @@ struct BriefCard: View {
     var body: some View {
         Card("Tu día") {
             if let b = brief, !b.bullets.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(b.bullets.enumerated()), id: \.offset) { i, line in
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(b.bullets.prefix(2).enumerated()), id: \.offset) { i, line in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Image(systemName: i == b.bullets.count - 1 && b.bullets.count > 1 ? "briefcase.fill" : "heart.fill")
                                 .font(.caption).foregroundStyle(i == b.bullets.count - 1 && b.bullets.count > 1 ? Theme.carbs : Theme.leaf)
-                            Text(line).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                            Text(line).font(.subheadline).lineLimit(2)
                         }
                     }
                 }
@@ -178,11 +175,10 @@ struct MeetingsCard: View {
     var body: some View {
         let left = meetings.filter { !isToday || (iso($0.end) ?? .distantFuture) > now }
         let current = isToday ? left.first { (iso($0.start) ?? .distantFuture) <= now } : nil
-        Card("Reuniones", meta: left.isEmpty ? "ninguna más hoy" : "\(left.count) hoy") {
+        Card("Reuniones", meta: left.isEmpty ? "ninguna más hoy" : "\(left.count) hoy", action: more) {
             if let c = current, let end = iso(c.end), let start = iso(c.start) { LiveEvent(event: c, start: start, end: end, now: now) }
-            ForEach(left.filter { $0.id != current?.id }.prefix(3)) { e in EventRow(event: e) }
-            if left.isEmpty { Text("Día sin llamadas: buen momento para trabajo profundo.").font(.footnote).foregroundStyle(.secondary) }
-            Button("Ver agenda completa", action: more).font(.footnote.weight(.semibold))
+            ForEach(left.filter { $0.id != current?.id }.prefix(current == nil ? 2 : 1)) { e in EventRow(event: e) }
+            if left.isEmpty { Text("Sin llamadas: buen momento para trabajo profundo.").font(.footnote).foregroundStyle(.secondary) }
         }
     }
 }
@@ -194,10 +190,9 @@ struct TopTasksCard: View {
     let toggle: (TaskItem) -> Void
     let more: () -> Void
     var body: some View {
-        Card("Lo importante") {
-            ForEach(tasks.prefix(4)) { t in TaskRow(task: t, date: date) { toggle(t) } }
+        Card("Lo importante", action: more) {
+            ForEach(tasks.prefix(3)) { t in TaskRow(task: t, date: date, compact: true) { toggle(t) } }
             if tasks.isEmpty { Text("Nada urgente pendiente.").font(.footnote).foregroundStyle(.secondary) }
-            Button("Ver todas las tareas", action: more).font(.footnote.weight(.semibold))
         }
     }
 }
@@ -261,6 +256,7 @@ struct NextTasksCard: View {
 struct TabPage<Content: View>: View {
     @EnvironmentObject var store: DayStore
     let title: String
+    var add: (() -> Void)? = nil
     @ViewBuilder var content: Content
     var body: some View {
         NavigationStack {
@@ -274,6 +270,9 @@ struct TabPage<Content: View>: View {
             .refreshable { await store.load(pull: true) }
             .navigationTitle(title)
             .toolbar {
+                if let add {
+                    ToolbarItem(placement: .topBarLeading) { Button(action: add) { Image(systemName: "plus.circle.fill").font(.title2) }.accessibilityLabel("Nueva tarea") }
+                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { store.shift(-1) } label: { Image(systemName: "chevron.left") }
                     Text(store.isToday ? "Hoy" : store.date.formatted(.dateTime.day().month())).font(.subheadline.weight(.semibold))
@@ -295,8 +294,9 @@ struct AgendaTab: View {
 
 struct TasksTab: View {
     @EnvironmentObject var store: DayStore
+    @State private var adding = false
     var body: some View {
-        TabPage(title: "Tareas") {
+        TabPage(title: "Tareas", add: { adding = true }) {
             if let day = store.day {
                 let date = store.dayKey
                 let all = day.tasks ?? []
@@ -312,9 +312,64 @@ struct TasksTab: View {
                         }
                     }
                 }
-                if all.isEmpty { Card("Tareas") { Text("No hay tareas.").font(.footnote).foregroundStyle(.secondary) } }
+                if all.isEmpty { Card("Tareas") { Text("No hay tareas. Tocá + para agregar una.").font(.footnote).foregroundStyle(.secondary) } }
             }
         }
+        .sheet(isPresented: $adding) { NewTaskSheet().environmentObject(store) }
+    }
+}
+
+// New task: title, project (one of yours or a new one), deadline and priority
+struct NewTaskSheet: View {
+    @EnvironmentObject var store: DayStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var project = ""
+    @State private var newProject = ""
+    @State private var hasDue = true
+    @State private var due = Date()
+    @State private var priority = "medium"
+    @State private var saving = false
+    @FocusState private var focused: Bool
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section { TextField("¿Qué tenés que hacer? (texto o un link)", text: $title, axis: .vertical).focused($focused) }
+                Section("Proyecto") {
+                    Picker("Proyecto", selection: $project) {
+                        Text("Sin proyecto").tag("")
+                        ForEach(store.day?.projects ?? []) { p in Text(p.name).tag(p.name) }
+                        Text("Nuevo proyecto…").tag("__new__")
+                    }
+                    if project == "__new__" { TextField("Nombre del proyecto", text: $newProject) }
+                }
+                Section("Cuándo") {
+                    Toggle("Fecha límite", isOn: $hasDue)
+                    if hasDue { DatePicker("Fecha", selection: $due, displayedComponents: .date) }
+                }
+                Section("Prioridad") {
+                    Picker("Prioridad", selection: $priority) {
+                        Text("Alta").tag("high"); Text("Media").tag("medium"); Text("Baja").tag("low")
+                    }.pickerStyle(.segmented)
+                }
+            }
+            .navigationTitle("Nueva tarea")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancelar") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(saving ? "Guardando…" : "Agregar") { Task { await save() } }
+                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || saving)
+                }
+            }
+            .onAppear { focused = true }
+        }
+    }
+    private func save() async {
+        saving = true
+        let name = project == "__new__" ? newProject.trimmingCharacters(in: .whitespaces) : project
+        if await store.addTask(title: title.trimmingCharacters(in: .whitespacesAndNewlines), due: hasDue ? HealthSync.day(due) : nil, priority: priority, project: name.isEmpty ? nil : name) { dismiss() }
+        saving = false
     }
 }
 
@@ -384,12 +439,13 @@ struct EventRow: View {
 struct TaskRow: View {
     let task: TaskItem
     let date: String
+    var compact = false
     let toggle: () -> Void
     var body: some View {
         Button(action: toggle) {
             HStack(spacing: 10) {
                 Check(on: task.status == "done")
-                Text(task.title).font(.subheadline).lineLimit(2).multilineTextAlignment(.leading)
+                Text(task.title).font(.subheadline).lineLimit(compact ? 1 : 2).multilineTextAlignment(.leading)
                     .strikethrough(task.status == "done").foregroundStyle(task.status == "done" ? .secondary : .primary)
                 Spacer(minLength: 4)
                 if let due = task.due_date, due < date, task.status != "done" { Pill("vencida", Theme.danger) }

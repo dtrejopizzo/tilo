@@ -75,6 +75,23 @@ final class DayStore: ObservableObject {
         await load()
     }
 
+    func addTask(title: String, due: String?, priority: String, project: String?) async -> Bool {
+        guard let api, !title.isEmpty else { return false }
+        var body: [String: Any] = ["title": title, "priority": priority]
+        if let due { body["due_date"] = due }
+        if let project { body["project"] = project }
+        do {
+            try await api.send("POST", "/tasks", body)
+            haptic()
+            show("Tarea agregada")
+            await load()
+            return true
+        } catch {
+            show(error.localizedDescription)
+            return false
+        }
+    }
+
     func toggle(_ t: TaskItem) async {
         guard let api else { return }
         try? await api.send("PATCH", "/tasks/\(t.id)", ["status": t.status == "done" ? "todo" : "done", "date": dayKey])

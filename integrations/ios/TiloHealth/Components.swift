@@ -36,18 +36,22 @@ func fmt(_ v: Double) -> String { Int(v.rounded()).formatted(.number.locale(Loca
 struct Card<Content: View>: View {
     let title: String
     var meta: String? = nil
+    var action: (() -> Void)? = nil
     @ViewBuilder var content: Content
-    init(_ title: String, meta: String? = nil, @ViewBuilder content: () -> Content) { self.title = title; self.meta = meta; self.content = content() }
+    init(_ title: String, meta: String? = nil, action: (() -> Void)? = nil, @ViewBuilder content: () -> Content) { self.title = title; self.meta = meta; self.action = action; self.content = content() }
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline) {
                 Text(title).font(.subheadline.weight(.semibold))
                 if let meta { Text(meta).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
                 Spacer()
+                if action != nil { Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary) }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { action?() }
             content
         }
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))

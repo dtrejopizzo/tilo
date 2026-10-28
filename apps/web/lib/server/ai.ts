@@ -260,13 +260,13 @@ export async function readBrief(userId: string, facts: Record<string, unknown>, 
   const r = await generateJson<{ bullets?: string[] }>(
     userId,
     "insights",
-    `You write the 2 or 3 lines at the top of the person's phone home screen at ${localTime} on ${today}, in Rioplatense Spanish (vos). Plain, concrete, max 16 words each, each starting with a verb. No numbers dumps, at most one number per line.
-Line 1-2: the one or two health actions that matter most in the next hours toward their goals (water, protein, the workout still to do, sleep tonight), using today's facts.
-Last line: what to prepare for the rest of today's work: name the most important upcoming meeting(s) from meetings_left (with time) and/or the top task. If there are no meetings and no tasks, give a third health or rest line instead.
+    `You write the 2 lines at the top of the person's phone home screen at ${localTime} on ${today}, in Rioplatense Spanish (vos). Each line max 11 words, starts with a verb, at most one number. Glanceable, no explanations.
+Line 1: the single health action that matters most in the next hours toward their goals (water, protein, the workout still to do, sleep tonight).
+Line 2: the single thing to prepare for today's work: the next important meeting from meetings_left (with time) or the top task. If there is neither, a second health or rest action.
 Never mention routine calendar blocks as meetings. Use only the data given. Return {"bullets": string[]}.`,
     JSON.stringify(facts),
   )
-  return (r.bullets ?? []).filter((b) => typeof b === "string" && b.trim()).slice(0, 3).map((b) => b.trim().slice(0, 160))
+  return (r.bullets ?? []).filter((b) => typeof b === "string" && b.trim()).slice(0, 2).map((b) => b.trim().slice(0, 110))
 }
 
 // ---------- Habits ----------
