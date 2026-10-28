@@ -14,7 +14,7 @@ struct TiloHealthApp: App {
         WindowGroup {
             Group {
                 // Signed in and connected: the full app. Otherwise the setup screen.
-                if sync.token != nil && sync.healthConnected { TodayView() } else { SettingsView() }
+                if sync.token != nil { RootView(sync: sync) } else { SettingsView() }
             }
                 .environmentObject(sync)
                 .preferredColorScheme(Appearance(rawValue: appearance)?.scheme)

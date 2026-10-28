@@ -14,6 +14,7 @@ struct Num: Decodable {
 
 struct DayData: Decodable {
     var date: String
+    var profile: Profile?
     var goals: Goals?
     var settings: [String: AnyDecodable]?
     var projects: [Project]?
@@ -41,7 +42,9 @@ struct Meal: Decodable, Identifiable {
 }
 struct Water: Decodable { var ml: Num }
 struct Metric: Decodable { var source: String; var steps: Num?; var active_kcal: Num?; var sleep_min: Num?; var resting_hr: Num? }
-struct Activity: Decodable, Identifiable { var id: String; var type: String; var name: String?; var duration_s: Num?; var kcal: Num?; var distance_m: Num? }
+struct Activity: Decodable, Identifiable { var id: String; var type: String; var name: String?; var duration_s: Num?; var kcal: Num?; var distance_m: Num?; var source: String?; var start_at: String?; var avg_hr: Num? }
+struct Profile: Decodable { var name: String? }
+struct Insights: Decodable { var bullets: [String]; var aiError: String? }
 struct Energy: Decodable { var bmr: Num?; var neat: Num?; var exercise: Num?; var tef: Num?; var total: Num?; var intake: Num? }
 struct CalEvent: Decodable, Identifiable { var id: String; var title: String; var start: String; var end: String; var allDay: Bool; var account: String? }
 

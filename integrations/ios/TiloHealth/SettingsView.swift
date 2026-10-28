@@ -44,6 +44,13 @@ struct SettingsView: View {
                     }
                 }
 
+                Section("Apariencia") {
+                    Picker("Tema", selection: $appearance) {
+                        ForEach(Appearance.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 Section("2 · Apple Health") {
                     if sync.healthConnected {
                         Label("Salud conectada", systemImage: "heart.fill").foregroundStyle(.pink)
@@ -57,12 +64,6 @@ struct SettingsView: View {
                 }
 
                 if sync.token != nil && sync.healthConnected {
-                    Section("Apariencia") {
-                        Picker("Tema", selection: $appearance) {
-                            ForEach(Appearance.allCases) { Text($0.label).tag($0.rawValue) }
-                        }
-                        .pickerStyle(.segmented)
-                    }
                     Section("Sincronización") {
                         Button {
                             Task { await sync.sync(reason: "a mano", force: true) }

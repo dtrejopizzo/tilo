@@ -10,7 +10,13 @@ import UIKit
 final class HealthSync: ObservableObject {
     static let shared = HealthSync()
 
-    @Published var token: String? = Keychain.get("token")
+    @Published var token: String? = {
+        #if DEBUG
+        // Simulator screenshots: `simctl launch … -tiloToken tilo_…` signs in without the browser
+        if let t = UserDefaults.standard.string(forKey: "tiloToken"), t.hasPrefix("tilo_") { Keychain.set("token", t); return t }
+        #endif
+        return Keychain.get("token")
+    }()
     @Published var baseURL: String = UserDefaults.standard.string(forKey: "baseURL") ?? "https://tiloapp.vercel.app"
     @Published var lastSync: Date? = UserDefaults.standard.object(forKey: "lastSync") as? Date
     @Published var lastResult: String = UserDefaults.standard.string(forKey: "lastResult") ?? ""
