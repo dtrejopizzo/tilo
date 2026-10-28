@@ -8,6 +8,7 @@ final class DayStore: ObservableObject {
     @Published var day: DayData?
     @Published var events: [CalEvent] = []
     @Published var insights: Insights?
+    @Published var brief: Brief?
     @Published var error: String?
     @Published var toast: String?
     @Published var now = Date()
@@ -47,7 +48,10 @@ final class DayStore: ObservableObject {
             try? await api.send("POST", "/sync", ["date": dayKey])
             if let fresh = try? await api.get("/day?date=\(dayKey)", as: DayData.self) { day = fresh }
         }
-        insights = (try? await api.get("/insights?date=\(dayKey)", as: Insights.self)) ?? insights
+        async let b = try? await api.get("/brief?date=\(dayKey)", as: Brief.self)
+        async let i = try? await api.get("/insights?date=\(dayKey)", as: Insights.self)
+        brief = await b ?? brief
+        insights = await i ?? insights
     }
 
     func quickAdd(_ text: String) async -> Bool {

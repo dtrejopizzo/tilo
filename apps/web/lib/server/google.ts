@@ -392,6 +392,8 @@ export interface CalendarEvent {
   allDay: boolean
   meetLink: string | null
   account: string
+  // A real meeting (other people invited, or a video call) vs a block on your own calendar
+  meeting: boolean
 }
 
 export async function calendarEvents(userId: string, date: string, timezone: string): Promise<CalendarEvent[]> {
@@ -403,7 +405,7 @@ export async function calendarEvents(userId: string, date: string, timezone: str
       const params = new URLSearchParams({
         timeMin: `${date}T00:00:00Z`, timeMax: `${next}T23:59:59Z`, singleEvents: "true", orderBy: "startTime", timeZone: timezone, maxResults: "50",
       })
-      const r = await gget<{ items?: { id: string; summary?: string; start: { dateTime?: string; date?: string }; end: { dateTime?: string; date?: string }; hangoutLink?: string; status?: string }[] }>(
+      const r = await gget<{ items?: { id: string; summary?: string; start: { dateTime?: string; date?: string }; end: { dateTime?: string; date?: string }; hangoutLink?: string; status?: string; attendees?: { self?: boolean; resource?: boolean }[]; conferenceData?: unknown; location?: string }[] }>(
         token,
         `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`,
       )
@@ -412,6 +414,7 @@ export async function calendarEvents(userId: string, date: string, timezone: str
         .map((e) => ({
           id: e.id, title: e.summary ?? "(sin título)", start: e.start.dateTime ?? e.start.date!, end: e.end.dateTime ?? e.end.date!,
           allDay: !e.start.dateTime, meetLink: e.hangoutLink ?? null, account: c.account_email ?? "",
+          meeting: !!e.start.dateTime && ((e.attendees ?? []).filter((a) => !a.self && !a.resource).length > 0 || !!e.hangoutLink || !!e.conferenceData || /zoom\.us|teams\.microsoft|meet\.google/i.test(e.location ?? "")),
         }))
     }),
   )

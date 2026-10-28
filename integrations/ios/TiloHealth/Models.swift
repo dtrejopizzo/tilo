@@ -45,8 +45,9 @@ struct Metric: Decodable { var source: String; var steps: Num?; var active_kcal:
 struct Activity: Decodable, Identifiable { var id: String; var type: String; var name: String?; var duration_s: Num?; var kcal: Num?; var distance_m: Num?; var source: String?; var start_at: String?; var avg_hr: Num? }
 struct Profile: Decodable { var name: String? }
 struct Insights: Decodable { var bullets: [String]; var aiError: String? }
+struct Brief: Decodable { var bullets: [String]; var aiError: String?; var meetings: [CalEvent]; var tasks: [TaskItem] }
 struct Energy: Decodable { var bmr: Num?; var neat: Num?; var exercise: Num?; var tef: Num?; var total: Num?; var intake: Num? }
-struct CalEvent: Decodable, Identifiable { var id: String; var title: String; var start: String; var end: String; var allDay: Bool; var account: String? }
+struct CalEvent: Decodable, Identifiable { var id: String; var title: String; var start: String; var end: String; var allDay: Bool; var account: String?; var meetLink: String?; var meeting: Bool? }
 
 struct AnyDecodable: Decodable {
     let value: Any?

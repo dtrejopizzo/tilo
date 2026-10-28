@@ -70,9 +70,9 @@ struct HomeView: View {
                 if let day = store.day {
                     KpiGrid(day: day, addWater: { Task { await store.addWater() } }).padding(.horizontal, 14)
                     VStack(spacing: 12) {
-                        PanoramaCard(insights: store.insights)
-                        NowCard(events: store.visibleEvents, now: store.now, isToday: store.isToday) { goTo(1) }
-                        NextTasksCard(day: day, date: store.dayKey, toggle: { t in Task { await store.toggle(t) } }) { goTo(2) }
+                        BriefCard(brief: store.brief)
+                        MeetingsCard(meetings: store.brief?.meetings ?? [], now: store.now, isToday: store.isToday) { goTo(1) }
+                        TopTasksCard(tasks: store.brief?.tasks ?? [], date: store.dayKey, toggle: { t in Task { await store.toggle(t) } }) { goTo(2) }
                     }
                     .padding(.horizontal, 14)
                 } else if let error = store.error {
@@ -91,7 +91,7 @@ struct HomeView: View {
     }
 
     private func header(_ m: DayMoment) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Button { store.shift(-1) } label: { Image(systemName: "chevron.left") }
                 Text(store.isToday ? "Hoy" : store.date.formatted(.dateTime.weekday(.wide).day().month())).font(.subheadline.weight(.semibold))
@@ -103,17 +103,17 @@ struct HomeView: View {
             .foregroundStyle(.white)
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(store.firstName.isEmpty ? "¡Hola!" : "¡Hola, \(store.firstName)!").font(.largeTitle.bold())
+                    Text(store.firstName.isEmpty ? "¡Hola!" : "¡Hola, \(store.firstName)!").font(.title.bold())
                     Text("\(m.title) · \(store.now.formatted(date: .omitted, time: .shortened))").font(.subheadline.weight(.medium)).opacity(0.9)
                 }
                 Spacer()
-                Image(systemName: m.symbol).font(.system(size: 46)).symbolRenderingMode(.hierarchical)
+                Image(systemName: m.symbol).font(.system(size: 34)).symbolRenderingMode(.hierarchical)
             }
             .foregroundStyle(.white)
         }
         .padding(.horizontal, 18)
-        .padding(.top, 62)
-        .padding(.bottom, 22)
+        .padding(.top, 58)
+        .padding(.bottom, 14)
         .background(LinearGradient(colors: m.colors, startPoint: .topLeading, endPoint: .bottomTrailing))
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28))
         .animation(.easeInOut(duration: 0.6), value: m.title)
@@ -143,6 +143,61 @@ struct QuickAddBar: View {
         Task {
             if await store.quickAdd(text) { text = "" }
             saving = false
+        }
+    }
+}
+
+// Two or three plain lines: what to do now for your health, what to prepare for work
+struct BriefCard: View {
+    let brief: Brief?
+    var body: some View {
+        Card("Tu día") {
+            if let b = brief, !b.bullets.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(b.bullets.enumerated()), id: \.offset) { i, line in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: i == b.bullets.count - 1 && b.bullets.count > 1 ? "briefcase.fill" : "heart.fill")
+                                .font(.caption).foregroundStyle(i == b.bullets.count - 1 && b.bullets.count > 1 ? Theme.carbs : Theme.leaf)
+                            Text(line).font(.subheadline).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            } else {
+                Text(brief?.aiError ?? "Armando tu día…").font(.footnote).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+// Only real meetings (people invited or a video call), not the routine blocks
+struct MeetingsCard: View {
+    let meetings: [CalEvent]
+    let now: Date
+    let isToday: Bool
+    let more: () -> Void
+    var body: some View {
+        let left = meetings.filter { !isToday || (iso($0.end) ?? .distantFuture) > now }
+        let current = isToday ? left.first { (iso($0.start) ?? .distantFuture) <= now } : nil
+        Card("Reuniones", meta: left.isEmpty ? "ninguna más hoy" : "\(left.count) hoy") {
+            if let c = current, let end = iso(c.end), let start = iso(c.start) { LiveEvent(event: c, start: start, end: end, now: now) }
+            ForEach(left.filter { $0.id != current?.id }.prefix(3)) { e in EventRow(event: e) }
+            if left.isEmpty { Text("Día sin llamadas: buen momento para trabajo profundo.").font(.footnote).foregroundStyle(.secondary) }
+            Button("Ver agenda completa", action: more).font(.footnote.weight(.semibold))
+        }
+    }
+}
+
+// The 3-4 most important open tasks; as you complete one, the next takes its place
+struct TopTasksCard: View {
+    let tasks: [TaskItem]
+    let date: String
+    let toggle: (TaskItem) -> Void
+    let more: () -> Void
+    var body: some View {
+        Card("Lo importante") {
+            ForEach(tasks.prefix(4)) { t in TaskRow(task: t, date: date) { toggle(t) } }
+            if tasks.isEmpty { Text("Nada urgente pendiente.").font(.footnote).foregroundStyle(.secondary) }
+            Button("Ver todas las tareas", action: more).font(.footnote.weight(.semibold))
         }
     }
 }
@@ -268,6 +323,7 @@ struct BodyTab: View {
     var body: some View {
         TabPage(title: "Cuerpo") {
             if let day = store.day {
+                PanoramaCard(insights: store.insights)
                 EnergyCard(day: day)
                 ActivitiesCard(day: day)
                 MealsCard(day: day)
