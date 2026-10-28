@@ -243,6 +243,25 @@ export class ServerTiloApi implements TiloApi {
     }
   }
 
+  // A photo of the plate: the better model identifies the foods and estimates the macros
+  async addMealPhoto(input: { image: { base64: string; mime: string }; note?: string; date: string; meal_type?: Meal["meal_type"]; eaten_at?: string }): Promise<Meal> {
+    const est = await estimateMeal(this.userId, input.note ?? "", input.eaten_at, input.image)
+    const { data, error } = await supabaseAdmin()
+      .from("meals")
+      .insert({
+        user_id: this.userId, date: input.date,
+        description: (input.note?.trim() || est.description || est.items.map((i) => i.name).join(", ") || "Comida (foto)").slice(0, 500),
+        eaten_at: input.eaten_at ?? null, meal_type: input.meal_type ?? est.meal_type ?? null,
+        kcal: est.kcal, protein_g: est.protein_g, carbs_g: est.carbs_g, fat_g: est.fat_g, fiber_g: est.fiber_g,
+        alcohol_g: est.alcohol_g, caffeine_mg: est.caffeine_mg, items: est.items,
+        micros: { ...est.micros, ...(est.assumptions ? { _assumptions: est.assumptions } : {}) }, source: "ai",
+      })
+      .select("*")
+      .single()
+    if (error) throw new Error(error.message)
+    return data as Meal
+  }
+
   async addMeal(meal: NewMeal): Promise<Meal> {
     if (!meal.description?.trim()) throw new BadRequestError("description is required")
     const date = meal.date!

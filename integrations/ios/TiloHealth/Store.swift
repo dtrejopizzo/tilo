@@ -67,6 +67,17 @@ final class DayStore: ObservableObject {
         }
     }
 
+    func addMealPhoto(_ image: UIImage) async {
+        guard let api, let jpeg = image.mealJPEG() else { return }
+        show("Analizando tu comida…")
+        do {
+            let m = try await api.send("POST", "/meals/photo", ["image": jpeg.base64EncodedString(), "mime": "image/jpeg", "date": dayKey], as: Meal.self)
+            haptic()
+            show("\(m.description) · \(fmt(m.kcal?.value ?? 0)) kcal")
+            await load()
+        } catch { show(error.localizedDescription) }
+    }
+
     func addWater() async {
         guard let api else { return }
         try? await api.send("POST", "/water", ["ml": 250, "date": dayKey])

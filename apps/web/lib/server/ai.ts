@@ -88,7 +88,8 @@ async function meter(userId: string, feature: string, input: number, output: num
 // Asks the configured model for JSON matching `shape` (described in the prompt) and parses it
 const GEMINI_FALLBACKS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"]
 
-export async function generateJson<T>(userId: string, feature: string, system: string, prompt: string): Promise<T> {
+// image: optional JPEG/PNG as base64 (no data: prefix), for photo meals
+export async function generateJson<T>(userId: string, feature: string, system: string, prompt: string, image?: { base64: string; mime: string }): Promise<T> {
   const creds = await credentialsFor(userId)
   if (creds.provider === "openrouter" && QUALITY_FEATURES.has(feature)) creds.model = env.aiModelQuality()
   let text: string
@@ -102,7 +103,8 @@ export async function generateJson<T>(userId: string, feature: string, system: s
     let res: Awaited<ReturnType<typeof ai.models.generateContent>> | undefined
     for (const [i, model] of models.entries()) {
       try {
-        res = await ai.models.generateContent({ model, contents: prompt, config: { systemInstruction: system, responseMimeType: "application/json", temperature: 0 } })
+        const contents = image ? [{ role: "user", parts: [{ inlineData: { mimeType: image.mime, data: image.base64 } }, { text: prompt }] }] : prompt
+        res = await ai.models.generateContent({ model, contents, config: { systemInstruction: system, responseMimeType: "application/json", temperature: 0 } })
         break
       } catch (e) {
         const quota = /\b429\b|RESOURCE_EXHAUSTED|exceeded your current quota/i.test(String((e as Error)?.message ?? e))
@@ -127,7 +129,10 @@ export async function generateJson<T>(userId: string, feature: string, system: s
         response_format: { type: "json_object" },
         // Room for the model's reasoning plus the answer; low effort keeps it fast and cheap
         ...(creds.provider === "openrouter" ? { max_tokens: 6000, reasoning: { effort: "low" } } : {}),
-        messages: [{ role: "system", content: system }, { role: "user", content: prompt }],
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: image ? [{ type: "image_url", image_url: { url: `data:${image.mime};base64,${image.base64}` } }, { type: "text", text: prompt }] : prompt },
+        ],
       }),
     })
     const data = await res.json()
@@ -145,7 +150,7 @@ export async function generateJson<T>(userId: string, feature: string, system: s
         max_tokens: 2000,
         temperature: 0,
         system: `${system}\nRespond with a single JSON object and nothing else.`,
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: image ? [{ type: "image", source: { type: "base64", media_type: image.mime, data: image.base64 } }, { type: "text", text: prompt }] : prompt }],
       }),
     })
     const data = await res.json()
@@ -216,12 +221,15 @@ export interface MealEstimate {
   assumptions: string
 }
 
-export async function estimateMeal(userId: string, description: string, localTime?: string): Promise<MealEstimate> {
-  const r = await generateJson<MealEstimate>(
+export async function estimateMeal(userId: string, description: string, localTime?: string, image?: { base64: string; mime: string }): Promise<MealEstimate & { description?: string }> {
+  const r = await generateJson<MealEstimate & { description?: string }>(
     userId,
     "meal",
-    MEAL_SYSTEM,
-    `Meal: "${description}"${localTime ? `\nLocal time: ${localTime}` : ""}`,
+    image
+      ? `${MEAL_SYSTEM}\nThe meal is in the photo. Identify every food and drink, estimate portions from plate size, utensils and hands, and add "description": a short Spanish description of the plate (e.g. "Milanesa con puré y ensalada").`
+      : MEAL_SYSTEM,
+    image ? `Photo of what I ate.${description ? ` Note: "${description}"` : ""}${localTime ? `\nLocal time: ${localTime}` : ""}` : `Meal: "${description}"${localTime ? `\nLocal time: ${localTime}` : ""}`,
+    image,
   )
   const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v * 10) / 10 : 0)
   return {
@@ -231,6 +239,7 @@ export async function estimateMeal(userId: string, description: string, localTim
     micros: Object.fromEntries(Object.entries(r.micros ?? {}).filter(([, v]) => typeof v === "number" && v > 0)),
     meal_type: ["breakfast", "morning_snack", "lunch", "merienda", "afternoon_snack", "dinner", "snack"].includes(r.meal_type) ? r.meal_type : "snack",
     assumptions: typeof r.assumptions === "string" ? r.assumptions.slice(0, 300) : "",
+    description: typeof r.description === "string" ? r.description.slice(0, 200) : undefined,
   }
 }
 

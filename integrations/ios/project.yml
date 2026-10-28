@@ -22,6 +22,9 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Tilo
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Tilo usa el micrófono para que dictes comidas, agua o tareas."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Tilo convierte en texto lo que dictás para registrarlo."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Tilo usa la cámara para que saques una foto de tu comida y calcule calorías y macros."
         INFOPLIST_KEY_NSHealthShareUsageDescription: "Tilo lee tus pasos, entrenamientos, sueño, frecuencia cardíaca y peso para mostrarlos en tu tablero y calcular tu gasto de energía."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait

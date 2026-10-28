@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 // Tilo on the iPhone: Inicio (greeting that follows the time of day, today at a glance) and four
@@ -121,14 +122,34 @@ struct QuickAddBar: View {
     @EnvironmentObject var store: DayStore
     @Binding var text: String
     @Binding var saving: Bool
+    @StateObject private var dictation = Dictation()
+    @State private var camera = false
+    @State private var picked: PhotosPickerItem?
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles").foregroundStyle(Theme.leaf)
-            TextField("Registrá lo que sea…", text: $text).submitLabel(.send).onSubmit { send() }
-            if saving { ProgressView() } else if !text.isEmpty {
+            TextField(dictation.listening ? "Te escucho…" : "Registrá o dictá lo que sea…", text: $text).submitLabel(.send).onSubmit { send() }
+            if saving { ProgressView() } else if !text.isEmpty && !dictation.listening {
                 Button(action: send) { Image(systemName: "arrow.up.circle.fill").font(.title2) }
+            } else {
+                MicButton(dictation: dictation) { text = $0 }
+                Menu {
+                    Button { camera = true } label: { Label("Sacar foto de la comida", systemImage: "camera") }
+                    PhotosPicker(selection: $picked, matching: .images) { Label("Elegir de Fotos", systemImage: "photo.on.rectangle") }
+                } label: { Image(systemName: "camera.fill").font(.title3).foregroundStyle(.secondary) }
+                .accessibilityLabel("Comida con foto")
             }
         }
+        .onChange(of: dictation.listening) { _, on in if !on, !text.isEmpty { send() } } // stop talking → it's saved
+        .fullScreenCover(isPresented: $camera) { CameraPicker { img in Task { await store.addMealPhoto(img) } }.ignoresSafeArea() }
+        .onChange(of: picked) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self), let img = UIImage(data: data) { await store.addMealPhoto(img) }
+                picked = nil
+            }
+        }
+        .alert("Dictado", isPresented: Binding(get: { dictation.error != nil }, set: { if !$0 { dictation.error = nil } })) { Button("OK") {} } message: { Text(dictation.error ?? "") }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line))
@@ -330,11 +351,17 @@ struct NewTaskSheet: View {
     @State private var due = Date()
     @State private var priority = "medium"
     @State private var saving = false
+    @StateObject private var dictation = Dictation()
     @FocusState private var focused: Bool
     var body: some View {
         NavigationStack {
             Form {
-                Section { TextField("¿Qué tenés que hacer? (texto o un link)", text: $title, axis: .vertical).focused($focused) }
+                Section {
+                    HStack(alignment: .top) {
+                        TextField(dictation.listening ? "Te escucho…" : "¿Qué tenés que hacer? (escribí o dictá)", text: $title, axis: .vertical).focused($focused)
+                        MicButton(dictation: dictation) { title = $0 }
+                    }
+                }
                 Section("Proyecto") {
                     Picker("Proyecto", selection: $project) {
                         Text("Sin proyecto").tag("")
