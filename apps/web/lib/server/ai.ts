@@ -170,7 +170,7 @@ export async function generateJson<T>(userId: string, feature: string, system: s
 function parseJsonLoose<T>(text: string, feature: string): T {
   const clean = text.replace(/```(?:json)?/gi, "")
   const repair = (j: string) => j.replace(/\/\/[^\n"]*$/gm, "").replace(/,\s*([}\]])/g, "$1")
-  let best: { len: number; value: T } | null = null
+  let best = null as { len: number; value: T } | null
   for (let start = clean.indexOf("{"); start !== -1; start = clean.indexOf("{", start + 1)) {
     if (best && start < best.len) continue // inside the object already taken
     let depth = 0
