@@ -164,11 +164,15 @@ export async function generateJson<T>(userId: string, feature: string, system: s
   return parseJsonLoose<T>(text, feature)
 }
 
-// Models sometimes wrap the JSON in prose or a code fence, or add a second object after it:
-// take the first balanced {...} that parses
+// Models sometimes wrap the JSON in prose or a code fence, add a second object after it, or leave a
+// trailing comma or a comment. Take the largest {...} that parses (after light repair): never a
+// fragment of it, like the first item of a list.
 function parseJsonLoose<T>(text: string, feature: string): T {
   const clean = text.replace(/```(?:json)?/gi, "")
+  const repair = (j: string) => j.replace(/\/\/[^\n"]*$/gm, "").replace(/,\s*([}\]])/g, "$1")
+  let best: { len: number; value: T } | null = null
   for (let start = clean.indexOf("{"); start !== -1; start = clean.indexOf("{", start + 1)) {
+    if (best && start < best.len) continue // inside the object already taken
     let depth = 0
     let inString = false
     for (let i = start; i < clean.length; i++) {
@@ -179,14 +183,20 @@ function parseJsonLoose<T>(text: string, feature: string): T {
       } else if (ch === '"') inString = true
       else if (ch === "{") depth++
       else if (ch === "}" && --depth === 0) {
-        try {
-          return JSON.parse(clean.slice(start, i + 1)) as T
-        } catch {
-          break
+        const chunk = clean.slice(start, i + 1)
+        for (const candidate of [chunk, repair(chunk)]) {
+          try {
+            const value = JSON.parse(candidate) as T
+            if (!best || chunk.length > best.len - start) best = { len: i + 1, value }
+            break
+          } catch {}
         }
+        break
       }
     }
+    if (best) break // the first top-level object that parses is the answer
   }
+  if (best) return best.value
   console.error(`[ai] invalid JSON for ${feature}:`, text.slice(0, 500))
   throw new Error(`The AI returned invalid JSON for ${feature}: ${JSON.stringify(text.slice(0, 160))} … ${JSON.stringify(text.slice(-160))} (${text.length} chars)`)
 }
